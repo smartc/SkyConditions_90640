@@ -24,6 +24,7 @@
 #include "sky_sensor.h"
 #include "web_ui_handler.h"
 #include "alpaca.h"
+#include "history.h"
 
 #include <Wire.h>
 #include <Adafruit_MLX90640.h>
@@ -122,6 +123,9 @@ void setup()
   // ── OTA firmware updates ──────────────────────────────────────────────────
   ElegantOTA.begin(&webUiServer);
 
+  // ── History ring buffers ──────────────────────────────────────────────────
+  historySetup();
+
   // ── Initial sensor reads ──────────────────────────────────────────────────
   if (sensorReady)     readSensor();
   if (brightnessReady) readBrightness();
@@ -135,6 +139,9 @@ void setup()
 // ---------------------------------------------------------------------------
 void loop()
 {
+  // Close history buckets on schedule.
+  historyLoop();
+
   // Service ASCOM Alpaca HTTP requests and UDP discovery.
   alpacaServer.handleClient();
   handleAlpacaDiscovery();
@@ -178,6 +185,13 @@ void readSensor()
 
   skyConditions.update(thermalFrame, ambientTemp);
 
+  historyAccumulateThermal(
+    skyConditions.getSkyTemperature(),
+    skyConditions.getMinTemperature(),
+    skyConditions.getMaxTemperature(),
+    skyConditions.getMedianTemperature(),
+    skyConditions.getAmbientTemperature());
+
   broadcastThermalFrame();
 
   lastSensorRead = millis();
@@ -215,6 +229,7 @@ void readBrightness()
     Debug.println("TSL2591: saturated, gain decreased");
   } else {
     skyConditions.updateBrightness(lux);
+    historyAccumulateBrightness(skyConditions.getLux(), skyConditions.getSqm());
     Debug.printf("Lux: %.4f  SQM: %.2f mag/arcsec^2\n",
       skyConditions.getLux(), skyConditions.getSqm());
 

@@ -20,6 +20,6 @@ extern WebSocketsServer wsServer;
 void initWebUI();
 void handleWebUI();
 void broadcastThermalFrame();
-void updateThermalSnapshot();  // regenerate cached /thermal.jpg
+void updateThermalSnapshot();   // regenerate cached /thermal.jpg
 
 #endif // WEB_UI_HANDLER_H

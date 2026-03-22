@@ -27,6 +27,12 @@ inline String getCommonStyles()
               " border-radius: 4px; margin-right: 8px; }\n"
     ".nav a:hover { background: #16213e; text-decoration: none; }\n"
     ".nav a.warn { background: #7f4f00; }\n"
+    ".tbtn { display:inline-block; padding:6px 12px; margin:2px; border-radius:4px;"
+             " background:#0f3460; color:#e0e0e0; cursor:pointer; border:none;"
+             " font-size:0.85em; }\n"
+    ".tbtn:hover { background:#1a4a8a; }\n"
+    ".tbtn.act { background:#4a90d9; color:#fff; }\n"
+    "#hist-status { font-size:0.8em; color:#636e72; margin-top:8px; }\n"
     ".btn { display: inline-block; padding: 8px 16px; border-radius: 4px; cursor: pointer;"
             " border: none; color: white; }\n"
     ".btn-danger { background: #c0392b; }\n"
@@ -68,6 +74,7 @@ inline String getNavBar()
     "<div class='nav'>\n"
     "<a href='/'>Home</a>\n"
     "<a href='/setup'>Setup</a>\n"
+    "<a href='/trends'>Trends</a>\n"
     "<a href='/update' class='warn'>Update</a>\n"
     "</div>\n";
 }
@@ -341,6 +348,217 @@ inline String getSetupPage()
   html += "}\n";
   html += "</script>\n";
   html += "</div>\n";
+
+  html += "</body></html>";
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// Trends page – time-series charts for temperature and brightness
+// ---------------------------------------------------------------------------
+inline String getTrendsPage()
+{
+  String html = getPageHeader("Sky Conditions – Trends");
+  html += "<h1>Sky Conditions – Trends</h1>\n";
+  html += getNavBar();
+
+  // Time-range selector card
+  html += "<div class='card'>\n";
+  html += "<div>\n";
+  html += "  <button class='tbtn' onclick='setRange(5,this)'>5 min</button>\n";
+  html += "  <button class='tbtn' onclick='setRange(30,this)'>30 min</button>\n";
+  html += "  <button class='tbtn act' onclick='setRange(60,this)'>1 hour</button>\n";
+  html += "  <button class='tbtn' onclick='setRange(120,this)'>2 hours</button>\n";
+  html += "  <button class='tbtn' onclick='setRange(360,this)'>6 hours</button>\n";
+  html += "  <button class='tbtn' onclick='setRange(720,this)'>12 hours</button>\n";
+  html += "  <button class='tbtn' onclick='setRange(1440,this)'>24 hours</button>\n";
+  html += "</div>\n";
+  html += "<div id='hist-status'>Loading...</div>\n";
+  html += "</div>\n";
+
+  // Chart canvases
+  html += "<div class='card'><h2>Temperature (\u00B0C)</h2>"
+          "<canvas id='cT' height='210' style='width:100%;display:block'></canvas></div>\n";
+  html += "<div class='card'><h2>Sky Brightness (lux)</h2>"
+          "<canvas id='cL' height='170' style='width:100%;display:block'></canvas></div>\n";
+  html += "<div class='card'><h2>Sky Quality (mag/arcsec\u00B2)</h2>"
+          "<canvas id='cQ' height='170' style='width:100%;display:block'></canvas></div>\n";
+
+  html += R"rawjs(
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let curMinutes = 60;
+
+function setRange(m, btn) {
+  curMinutes = m;
+  document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('act'));
+  btn.classList.add('act');
+  loadData();
+}
+
+// ── Data fetch ─────────────────────────────────────────────────────────────
+function loadData() {
+  document.getElementById('hist-status').textContent = 'Loading…';
+  fetch('/history.json?minutes=' + curMinutes)
+    .then(r => r.json())
+    .then(d => {
+      const resTxt = d.res < 60 ? d.res + ' s' : (d.res / 60) + ' min';
+      document.getElementById('hist-status').textContent =
+        d.count + ' samples · ' + resTxt + ' resolution';
+      renderAll(d);
+    })
+    .catch(e => {
+      document.getElementById('hist-status').textContent = 'Error: ' + e;
+    });
+}
+
+// ── Render all charts ──────────────────────────────────────────────────────
+function renderAll(d) {
+  drawChart('cT', [
+    { label:'Sky',     color:'#a29bfe', data:d.sky,  lo:d.sky_lo,  hi:d.sky_hi  },
+    { label:'Min',     color:'#74b9ff', data:d.fmin, lo:d.fmin_lo, hi:d.fmin_hi },
+    { label:'Max',     color:'#fd79a8', data:d.fmax, lo:d.fmax_lo, hi:d.fmax_hi },
+    { label:'Median',  color:'#55efc4', data:d.med,  lo:d.med_lo,  hi:d.med_hi  },
+    { label:'Ambient', color:'#ffeaa7', data:d.amb,  lo:d.amb_lo,  hi:d.amb_hi  }
+  ], d.t, d.now, '°C');
+
+  drawChart('cL', [
+    { label:'Lux', color:'#fdcb6e', data:d.lux, lo:d.lux_lo, hi:d.lux_hi }
+  ], d.t, d.now, 'lux');
+
+  drawChart('cQ', [
+    { label:'SQM', color:'#00cec9', data:d.sqm, lo:d.sqm_lo, hi:d.sqm_hi }
+  ], d.t, d.now, 'mag/sq"');
+}
+
+// ── Chart renderer ─────────────────────────────────────────────────────────
+function drawChart(id, series, timestamps, nowMs, yUnit) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  canvas.width = canvas.parentElement.clientWidth - 32;
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const P = { t: 12, r: 14, b: 38, l: 54 };
+  const cw = W - P.l - P.r, ch = H - P.t - P.b;
+
+  // Background
+  ctx.fillStyle = '#0f3460';
+  ctx.fillRect(0, 0, W, H);
+
+  const n = timestamps ? timestamps.length : 0;
+  if (n === 0) {
+    ctx.fillStyle = '#888'; ctx.textAlign = 'center';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('No data yet – wait for the first 30-second bucket to close.',
+                 W / 2, H / 2);
+    return;
+  }
+
+  // X span in ms
+  const t0 = timestamps[0], t1 = timestamps[n - 1];
+  const tSpan = (t1 - t0) || 1;
+
+  // Y range across all values (avg + lo + hi)
+  let yMn = Infinity, yMx = -Infinity;
+  for (const s of series) {
+    for (const arr of [s.data, s.lo || [], s.hi || []]) {
+      for (const v of arr) {
+        if (v !== null && isFinite(v)) {
+          if (v < yMn) yMn = v;
+          if (v > yMx) yMx = v;
+        }
+      }
+    }
+  }
+  if (!isFinite(yMn)) { yMn = 0; yMx = 1; }
+  const ySpan = yMx - yMn || 1;
+  yMn -= ySpan * 0.05; yMx += ySpan * 0.05;
+
+  // Coordinate transforms
+  const tx = i => P.l + (timestamps[i] - t0) / tSpan * cw;
+  const ty = v => P.t + (1 - (v - yMn) / (yMx - yMn)) * ch;
+
+  // Grid
+  ctx.strokeStyle = '#2d3561'; ctx.lineWidth = 1;
+  const yTicks = 4;
+  for (let k = 0; k <= yTicks; k++) {
+    const yp = P.t + ch * k / yTicks;
+    ctx.beginPath(); ctx.moveTo(P.l, yp); ctx.lineTo(P.l + cw, yp); ctx.stroke();
+    const val = yMx - (yMx - yMn) * k / yTicks;
+    ctx.fillStyle = '#8899aa'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+    ctx.fillText(val.toFixed(ySpan > 10 ? 0 : 1), P.l - 3, yp + 4);
+  }
+
+  const xTicks = 6;
+  for (let k = 0; k <= xTicks; k++) {
+    const xp = P.l + cw * k / xTicks;
+    ctx.beginPath(); ctx.moveTo(xp, P.t); ctx.lineTo(xp, P.t + ch); ctx.stroke();
+    const tAt  = t0 + tSpan * k / xTicks;
+    const mAgo = (tAt - nowMs) / 60000;   // negative = past
+    const lbl  = (k === xTicks) ? 'now' :
+                 (Math.abs(mAgo) < 90 ? Math.round(-mAgo) + 'm' :
+                                        (-mAgo / 60).toFixed(1) + 'h');
+    ctx.fillStyle = '#8899aa'; ctx.textAlign = 'center'; ctx.font = '10px sans-serif';
+    ctx.fillText(lbl, xp, P.t + ch + 14);
+  }
+
+  // Y-axis unit label (rotated)
+  ctx.save();
+  ctx.translate(11, P.t + ch / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#8899aa'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(yUnit, 0, 0);
+  ctx.restore();
+
+  // Shaded lo/hi bands
+  for (const s of series) {
+    if (!s.lo || !s.hi) continue;
+    ctx.fillStyle = s.color + '28';
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i++) {
+      const v = s.lo[i];
+      if (v === null) { started = false; continue; }
+      if (!started) { ctx.moveTo(tx(i), ty(v)); started = true; }
+      else ctx.lineTo(tx(i), ty(v));
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      const v = s.hi[i]; if (v !== null) ctx.lineTo(tx(i), ty(v));
+    }
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Lines
+  for (const s of series) {
+    ctx.strokeStyle = s.color; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i++) {
+      const v = s.data[i];
+      if (v === null) { started = false; continue; }
+      if (!started) { ctx.moveTo(tx(i), ty(v)); started = true; }
+      else ctx.lineTo(tx(i), ty(v));
+    }
+    ctx.stroke();
+  }
+
+  // Legend along the bottom
+  let lx = P.l;
+  const ly = H - 8;
+  ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+  for (const s of series) {
+    ctx.strokeStyle = s.color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lx, ly - 4); ctx.lineTo(lx + 14, ly - 4); ctx.stroke();
+    ctx.fillStyle = '#ccc';
+    ctx.fillText(s.label, lx + 17, ly);
+    lx += 17 + ctx.measureText(s.label).width + 14;
+  }
+}
+
+// ── Boot & auto-refresh ────────────────────────────────────────────────────
+loadData();
+setInterval(loadData, 30000);
+</script>
+)rawjs";
 
   html += "</body></html>";
   return html;

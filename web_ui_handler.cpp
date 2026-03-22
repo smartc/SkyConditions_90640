@@ -8,6 +8,7 @@
 
 #include "web_ui_handler.h"
 #include "html_templates.h"
+#include "history.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <img_converters.h>
@@ -94,6 +95,19 @@ static void handleResetWifi()
   ESP.restart();
 }
 
+static void handleTrends()
+{
+  webUiServer.send(200, "text/html", getTrendsPage());
+}
+
+static void handleHistoryJSON()
+{
+  int minutes = 60;
+  if (webUiServer.hasArg("minutes"))
+    minutes = webUiServer.arg("minutes").toInt();
+  historyStreamJSON(webUiServer, minutes);
+}
+
 static void handleNotFound()
 {
   webUiServer.send(404, "text/plain",
@@ -106,10 +120,12 @@ static void handleNotFound()
 
 void initWebUI()
 {
-  webUiServer.on("/",            HTTP_GET,  handleRoot);
-  webUiServer.on("/setup",       HTTP_GET,  handleSetup);
-  webUiServer.on("/thermal.jpg", HTTP_GET,  handleThermalJpeg);
-  webUiServer.on("/reset_wifi",  HTTP_POST, handleResetWifi);
+  webUiServer.on("/",             HTTP_GET,  handleRoot);
+  webUiServer.on("/setup",        HTTP_GET,  handleSetup);
+  webUiServer.on("/trends",       HTTP_GET,  handleTrends);
+  webUiServer.on("/history.json", HTTP_GET,  handleHistoryJSON);
+  webUiServer.on("/thermal.jpg",  HTTP_GET,  handleThermalJpeg);
+  webUiServer.on("/reset_wifi",   HTTP_POST, handleResetWifi);
   webUiServer.onNotFound(handleNotFound);
   webUiServer.begin();
   Debug.println("Web UI server started on port 80");
