@@ -33,6 +33,11 @@ void configLoad(DeviceConfig &cfg)
   strncpy(cfg.ntpServer, ntp.c_str(), sizeof(cfg.ntpServer) - 1);
   cfg.ntpServer[sizeof(cfg.ntpServer) - 1] = '\0';
 
+  // Cloud cover
+  cfg.cloudCoverMethod   = prefs.getUChar("cloudMethod", 0);
+  cfg.cloudPixelRegion   = prefs.getUChar("cloudPxRgn",  0);
+  cfg.cloudEdgeExclude   = prefs.getUChar("cloudEdge",   2);
+
   prefs.end();
 }
 
@@ -51,6 +56,9 @@ void configSave(const DeviceConfig &cfg)
   prefs.putDouble("avgPeriod",   cfg.averagePeriod);
   prefs.putString("location",    cfg.location);
   prefs.putString("ntpServer",   cfg.ntpServer);
+  prefs.putUChar ("cloudMethod", cfg.cloudCoverMethod);
+  prefs.putUChar ("cloudPxRgn",  cfg.cloudPixelRegion);
+  prefs.putUChar ("cloudEdge",   cfg.cloudEdgeExclude);
 
   prefs.end();
 }

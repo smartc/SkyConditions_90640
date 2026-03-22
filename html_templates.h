@@ -115,9 +115,13 @@ inline String getHomePage()
           "    <div class='stat-value amb-temp' id='amb-temp'>" +
           (skyConditions.hasData() ? String(skyConditions.getAmbientTemperature(), 1) + "°C" : "--") +
           "</div></div>\n";
-  html += "  <div class='stat-box'><div class='stat-label'>Cloud Cover</div>"
-          "    <div class='stat-value' style='color:#dfe6e9' id='cloud-cover'>" +
-          (skyConditions.hasData() ? String(skyConditions.getCloudCover(), 0) + "%" : "--") +
+  html += "  <div class='stat-box'><div class='stat-label'>Cloud Cover<br><span style='font-size:0.8em;color:#74b9ff'>Mean</span></div>"
+          "    <div class='stat-value' style='color:#dfe6e9'>" +
+          (skyConditions.hasData() ? String(skyConditions.getCloudCoverMean(), 0) + "%" : "--") +
+          "</div></div>\n";
+  html += "  <div class='stat-box'><div class='stat-label'>Cloud Cover<br><span style='font-size:0.8em;color:#74b9ff'>Per-Pixel</span></div>"
+          "    <div class='stat-value' style='color:#b2bec3'>" +
+          (skyConditions.hasData() ? String(skyConditions.getCloudCoverPixel(), 0) + "%" : "--") +
           "</div></div>\n";
   html += "  <div class='stat-box'><div class='stat-label'>Sky Brightness</div>"
           "    <div class='stat-value' style='color:#fdcb6e'>" +
@@ -169,17 +173,22 @@ const ctx    = canvas.getContext('2d');
 const imgData = ctx.createImageData(COLS, ROWS);
 const status  = document.getElementById('ws-status');
 
-// Jet colormap: maps [0..1] to RGBA
-function jet(t) {
-  let r = Math.min(1, Math.max(0, 1.5 - Math.abs(4*t - 3)));
-  let g = Math.min(1, Math.max(0, 1.5 - Math.abs(4*t - 2)));
-  let b = Math.min(1, Math.max(0, 1.5 - Math.abs(4*t - 1)));
-  return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+// ClearDarkSky colormap: t=0 (coldest/clear) → dark navy, t=1 (warmest/overcast) → white
+const CDS_STOPS = [
+  [0,62,126],[19,83,147],[38,102,166],[78,142,206],[98,162,226],
+  [118,182,246],[153,217,217],[173,237,237],[193,193,193],[233,233,233],[250,250,250]
+];
+function cds(t) {
+  if (t <= 0) return CDS_STOPS[0];
+  if (t >= 1) return CDS_STOPS[10];
+  const lo = Math.floor(t * 10);
+  const f  = t * 10 - lo;
+  return CDS_STOPS[lo].map((c, i) => Math.round(c + f * (CDS_STOPS[lo+1][i] - c)));
 }
 
-// Pre-compute jet lookup table
-const jetLUT = new Array(256);
-for (let i = 0; i < 256; i++) { jetLUT[i] = jet(i/255); }
+// Pre-compute colormap lookup table
+const skyLT = new Array(256);
+for (let i = 0; i < 256; i++) { skyLT[i] = cds(i/255); }
 
 let ws, fpsCount = 0, lastFpsTime = Date.now(), fps = 0;
 
@@ -205,7 +214,7 @@ function connect() {
 
     // Render pixels
     for (let i = 0; i < PIXELS; i++) {
-      const [r,g,b] = jetLUT[pix[i]];
+      const [r,g,b] = skyLT[pix[i]];
       imgData.data[i*4]   = r;
       imgData.data[i*4+1] = g;
       imgData.data[i*4+2] = b;
@@ -425,6 +434,44 @@ inline String getSetupPage()
           String(deviceConfig.averagePeriod, 1) + "' style='" + inpStyle + "'></td>"
           "<td>ObservingConditions AveragePeriod; persisted across reboots</td></tr>\n";
 
+  html += "<tr><td>Cloud Cover Method<br><span style='font-size:0.8em;color:#8899aa'>(Alpaca reporting)</span></td><td>";
+  html += "<select name='cloudMethod' style='" + inpStyle + "width:130px;'>";
+  html += "<option value='0'" + String(deviceConfig.cloudCoverMethod == 0 ? " selected" : "") +
+          ">Mean (FOV avg)</option>";
+  html += "<option value='1'" + String(deviceConfig.cloudCoverMethod == 1 ? " selected" : "") +
+          ">Per-pixel</option>";
+  html += "</select></td>"
+          "<td>Which calculation to report via ASCOM Alpaca CloudCover. "
+          "Both are always recorded in history and shown on the home page.</td></tr>\n";
+
+  html += "<tr><td>Per-Pixel Region</td><td>";
+  html += "<select name='cloudPxRgn' id='cloudPxRgn' style='" + inpStyle + "width:130px;'"
+          " onchange='updateEdge()'>";
+  html += "<option value='0'" + String(deviceConfig.cloudPixelRegion == 0 ? " selected" : "") +
+          ">Centre FOV</option>";
+  html += "<option value='1'" + String(deviceConfig.cloudPixelRegion == 1 ? " selected" : "") +
+          ">Full Frame</option>";
+  html += "</select></td>"
+          "<td>Pixel region used for the per-pixel cloud cover calculation</td></tr>\n";
+
+  html += "<tr><td>Edge Exclusion (pixels)<br><span style='font-size:0.8em;color:#8899aa'>(Full Frame only)</span></td><td>";
+  html += "<input type='number' name='cloudEdge' id='cloudEdge' min='0' max='10' step='1' value='" +
+          String(deviceConfig.cloudEdgeExclude) + "' style='" + inpStyle + "'"  +
+          String(deviceConfig.cloudPixelRegion == 0 ? " disabled" : "") + "></td>"
+          "<td>Pixels to ignore on each side of the frame (0\u201310). "
+          "With default 2: uses " +
+          String((SENSOR_COLS - 4)) + "\u00D7" + String((SENSOR_ROWS - 4)) + " = " +
+          String((SENSOR_COLS - 4) * (SENSOR_ROWS - 4)) + " pixels</td></tr>\n";
+
+  html += R"rawsetup(
+<script>
+function updateEdge() {
+  var rgn = document.getElementById('cloudPxRgn').value;
+  document.getElementById('cloudEdge').disabled = (rgn === '0');
+}
+</script>
+)rawsetup";
+
   // ── Identity ──────────────────────────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>Identity</th></tr>\n";
 
@@ -539,7 +586,8 @@ function renderAll(d) {
   ], d.t, d.now, '°C');
 
   drawChart('cC', [
-    { label:'Cloud Cover', color:'#dfe6e9', data:d.cloud, lo:d.cloud_lo, hi:d.cloud_hi }
+    { label:'Cloud Mean',     color:'#dfe6e9', data:d.cloud,   lo:d.cloud_lo,   hi:d.cloud_hi   },
+    { label:'Cloud Per-Pixel',color:'#b2bec3', data:d.cloudpx, lo:d.cloudpx_lo, hi:d.cloudpx_hi }
   ], d.t, d.now, '%');
 
   drawChart('cL', [

@@ -206,7 +206,8 @@ void readSensor()
     skyConditions.getMaxTemperature(),
     skyConditions.getMedianTemperature(),
     skyConditions.getAmbientTemperature(),
-    skyConditions.getCloudCover());
+    skyConditions.getCloudCoverMean(),
+    skyConditions.getCloudCoverPixel());
 
   broadcastThermalFrame();
 

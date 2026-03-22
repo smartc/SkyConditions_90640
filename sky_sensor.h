@@ -48,13 +48,20 @@ public:
   unsigned long getLastBrightnessMillis() const { return _lastBrightnessMillis; }
 
   // Cloud cover (0–100 %).  Valid whenever hasData() is true.
-  float getCloudCover() const { return _cloudCover; }
+  // getCloudCover() returns whichever method is selected in deviceConfig.cloudCoverMethod.
+  float getCloudCover()      const;
+  float getCloudCoverMean()  const { return _cloudCover; }
+  float getCloudCoverPixel() const { return _cloudCoverPixel; }
 
   // ASCOM device state (read/written by alpaca.cpp handlers).
   bool   getConnected()      const { return _connected; }
   void   setConnected(bool v)      { _connected = v; }
   double getAveragePeriod()  const { return _averagePeriod; }
   bool   setAveragePeriod(double v);  // returns false if v < 0
+
+  // Raw pixel access – returns pointer to the internal SENSOR_PIXELS float array.
+  // Only valid while hasData() is true; caller must not hold across update().
+  const float* getFrame() const { return _frame; }
 
   // Fills a WebSocket binary frame buffer; buf must be >= WS_FRAME_SIZE bytes.
   void fillWebSocketBuffer(uint8_t *buf) const;
@@ -84,7 +91,8 @@ private:
   unsigned long _lastBrightnessMillis;
 
   // Cloud cover derived from thermal delta.
-  float         _cloudCover;
+  float         _cloudCover;       // mean method (center FOV average delta)
+  float         _cloudCoverPixel;  // per-pixel method (center FOV pixel-by-pixel)
 
   // ASCOM device state.
   double        _averagePeriod;

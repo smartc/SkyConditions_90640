@@ -5,7 +5,7 @@
 #include <WebServer.h>
 
 // Metric indices – order must match JSON key array in history.cpp
-enum { HM_SKY=0, HM_FMIN, HM_FMAX, HM_MED, HM_AMB, HM_CLOUD, HM_LUX, HM_SQM, HM_N };
+enum { HM_SKY=0, HM_FMIN, HM_FMAX, HM_MED, HM_AMB, HM_CLOUD, HM_CLOUD_PX, HM_LUX, HM_SQM, HM_N };
 
 // Sentinel stored in a bucket slot when no samples arrived for that metric.
 #define HIST_NO_DATA  -999.0f
@@ -27,7 +27,7 @@ struct HistBucket {
 
 void historySetup();
 void historyLoop();
-void historyAccumulateThermal(float sky, float fmin, float fmax, float med, float amb, float cloud);
+void historyAccumulateThermal(float sky, float fmin, float fmax, float med, float amb, float cloud, float cloudPx);
 void historyAccumulateBrightness(float lux, float sqm);
 
 // Stream history JSON to server; minutes: 5, 30, 60, 120, 360, 720, 1440.

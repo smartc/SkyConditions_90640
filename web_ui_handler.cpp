@@ -96,7 +96,7 @@ void updateThermalSnapshot()
         uint8_t *dst = &scaledBuf[
           ((row * THERMAL_JPEG_SCALE + dy) * SNAP_W + col * THERMAL_JPEG_SCALE) * 3];
         for (int dx = 0; dx < THERMAL_JPEG_SCALE; dx++, dst += 3) {
-          dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
+          dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0];  // R↔B swap: fmt2jpg_cb expects BGR
         }
       }
     }
@@ -194,10 +194,51 @@ static void handleSaveConfig()
     strncpy(deviceConfig.ntpServer, ntp.c_str(), sizeof(deviceConfig.ntpServer) - 1);
     deviceConfig.ntpServer[sizeof(deviceConfig.ntpServer) - 1] = '\0';
   }
+  if (webUiServer.hasArg("cloudMethod"))
+    deviceConfig.cloudCoverMethod = (uint8_t)(webUiServer.arg("cloudMethod").toInt() != 0 ? 1 : 0);
+  if (webUiServer.hasArg("cloudPxRgn"))
+    deviceConfig.cloudPixelRegion = (uint8_t)(webUiServer.arg("cloudPxRgn").toInt() != 0 ? 1 : 0);
+  if (webUiServer.hasArg("cloudEdge"))
+    deviceConfig.cloudEdgeExclude = (uint8_t)constrain(webUiServer.arg("cloudEdge").toInt(), 0, 10);
   configSave(deviceConfig);
   Debug.println("Config saved via web UI");
   webUiServer.sendHeader("Location", "/setup");
   webUiServer.send(303, "text/plain", "Redirecting...");
+}
+
+static void handleThermalMatrix()
+{
+  if (!skyConditions.hasData()) {
+    webUiServer.send(503, "application/json", "{\"error\":\"No thermal data yet\"}");
+    return;
+  }
+
+  const float *frame = skyConditions.getFrame();
+  char buf[32];
+
+  webUiServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  webUiServer.send(200, "application/json", "");
+
+  snprintf(buf, sizeof(buf), "{\"rows\":%d,\"cols\":%d", SENSOR_ROWS, SENSOR_COLS);
+  webUiServer.sendContent(buf);
+
+  snprintf(buf, sizeof(buf), ",\"ambient\":%.2f", skyConditions.getAmbientTemperature());
+  webUiServer.sendContent(buf);
+
+  snprintf(buf, sizeof(buf), ",\"sky\":%.2f", skyConditions.getSkyTemperature());
+  webUiServer.sendContent(buf);
+
+  webUiServer.sendContent(",\"pixels\":[");
+  for (int row = 0; row < SENSOR_ROWS; row++) {
+    webUiServer.sendContent(row == 0 ? "[" : ",[");
+    for (int col = 0; col < SENSOR_COLS; col++) {
+      snprintf(buf, sizeof(buf), col == 0 ? "%.2f" : ",%.2f",
+               frame[row * SENSOR_COLS + col]);
+      webUiServer.sendContent(buf);
+    }
+    webUiServer.sendContent("]");
+  }
+  webUiServer.sendContent("]}");
 }
 
 static void handleNotFound()
@@ -227,7 +268,8 @@ void initWebUI()
   webUiServer.on("/setup",        HTTP_GET,  handleSetup);
   webUiServer.on("/trends",       HTTP_GET,  handleTrends);
   webUiServer.on("/history.json", HTTP_GET,  handleHistoryJSON);
-  webUiServer.on("/thermal.jpg",  HTTP_GET,  handleThermalJpeg);
+  webUiServer.on("/thermal.jpg",    HTTP_GET,  handleThermalJpeg);
+  webUiServer.on("/thermalmatrix",  HTTP_GET,  handleThermalMatrix);
   webUiServer.on("/reset_wifi",   HTTP_POST, handleResetWifi);
   webUiServer.on("/save_config",  HTTP_POST, handleSaveConfig);
   webUiServer.onNotFound(handleNotFound);

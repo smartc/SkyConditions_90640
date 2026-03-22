@@ -152,14 +152,15 @@ void historyLoop()
   }
 }
 
-void historyAccumulateThermal(float sky, float fmin, float fmax, float med, float amb, float cloud)
+void historyAccumulateThermal(float sky, float fmin, float fmax, float med, float amb, float cloud, float cloudPx)
 {
-  accumulate(HM_SKY,   sky);
-  accumulate(HM_FMIN,  fmin);
-  accumulate(HM_FMAX,  fmax);
-  accumulate(HM_MED,   med);
-  accumulate(HM_AMB,   amb);
-  accumulate(HM_CLOUD, cloud);
+  accumulate(HM_SKY,      sky);
+  accumulate(HM_FMIN,     fmin);
+  accumulate(HM_FMAX,     fmax);
+  accumulate(HM_MED,      med);
+  accumulate(HM_AMB,      amb);
+  accumulate(HM_CLOUD,    cloud);
+  accumulate(HM_CLOUD_PX, cloudPx);
 }
 
 void historyAccumulateBrightness(float lux, float sqm)
@@ -233,7 +234,7 @@ void historyStreamJSON(WebServer& server, int minutes)
   // Outer loop over each of the three stat types (avg, lo, hi),
   // inner loop over metrics, innermost loop over buckets.
   static const char* keys[HM_N] = {
-    "sky","fmin","fmax","med","amb","cloud","lux","sqm"
+    "sky","fmin","fmax","med","amb","cloud","cloudpx","lux","sqm"
   };
   static const char* suffixes[3] = { "", "_lo", "_hi" };
 
