@@ -91,7 +91,7 @@ void setup()
     // MAX gain + 300 ms integration: optimised for night-sky measurements.
     // calculateLux() returns -1 on overflow (bright daytime); handled in readBrightness().
     tsl.setGain(TSL2591_GAIN_MAX);
-    tsl.setTiming(TSL2591_INTEGRATIONTIME_300MS);
+    tsl.setTiming(TSL2591_INTEGRATIONTIME_300MS);  // default; overridden by config on first read
     brightnessReady = true;
     Debug.println("TSL2591 initialised (MAX gain, 300 ms integration)");
   }
@@ -115,6 +115,20 @@ void setup()
   Debug.print("WiFi connected. IP: ");
   Debug.println(WiFi.localIP().toString());
 
+  // ── Persistent config (calibration, thresholds) ──────────────────────────
+  configLoad(deviceConfig);
+  Debug.printf("Config: sqmOffset=%.2f  cloudClear=%.1f  cloudOvercast=%.1f\n",
+    deviceConfig.sqmOffset, deviceConfig.cloudClearDelta, deviceConfig.cloudOvercastDelta);
+
+  // ── NTP sync – system clock; configurable preferred server ───────────────
+  if (strlen(deviceConfig.ntpServer) > 0) {
+    configTime(0, 0, deviceConfig.ntpServer, "pool.ntp.org", "time.nist.gov");
+    Debug.println("NTP sync started (UTC) – preferred: " + String(deviceConfig.ntpServer));
+  } else {
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    Debug.println("NTP sync started (UTC) – using pool.ntp.org / time.nist.gov");
+  }
+
   // ── ASCOM Alpaca server (Arduino WebServer on port 11111) ─────────────────
   setupAlpacaServer();
 
@@ -123,11 +137,6 @@ void setup()
 
   // ── OTA firmware updates ──────────────────────────────────────────────────
   ElegantOTA.begin(&webUiServer);
-
-  // ── Persistent config (calibration, thresholds) ──────────────────────────
-  configLoad(deviceConfig);
-  Debug.printf("Config: sqmOffset=%.2f  cloudClear=%.1f  cloudOvercast=%.1f\n",
-    deviceConfig.sqmOffset, deviceConfig.cloudClearDelta, deviceConfig.cloudOvercastDelta);
 
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
@@ -217,7 +226,14 @@ void readSensor()
 void readBrightness()
 {
   // Auto-gain state – persists across calls.
-  static tsl2591Gain_t currentGain = TSL2591_GAIN_MAX;
+  static tsl2591Gain_t currentGain    = TSL2591_GAIN_MAX;
+  static uint8_t       lastIntegration = 0xFF;  // force apply on first call
+
+  // Apply integration time from config (only when it changes).
+  if (deviceConfig.tsl2591Integration != lastIntegration) {
+    tsl.setTiming((tsl2591IntegrationTime_t)deviceConfig.tsl2591Integration);
+    lastIntegration = deviceConfig.tsl2591Integration;
+  }
 
   uint32_t lum = tsl.getFullLuminosity();
   uint16_t ch0 = lum & 0xFFFF;

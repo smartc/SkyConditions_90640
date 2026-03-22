@@ -366,23 +366,81 @@ inline String getSetupPage()
   String inpStyle = "width:90px;background:#1a1a2e;color:#e0e0e0;"
                     "border:1px solid #2d3561;border-radius:4px;padding:4px;";
 
+  // ── Calibration ─────────────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Calibration</th></tr>\n";
+
   html += "<tr><td>SQM Offset (mag/arcsec\u00B2)</td>"
           "<td><input type='number' name='sqmOffset' step='0.01' value='" +
-          String(deviceConfig.sqmOffset, 2) +
-          "' style='" + inpStyle + "'></td>"
+          String(deviceConfig.sqmOffset, 2) + "' style='" + inpStyle + "'></td>"
           "<td>Additive correction applied to the calculated SQM value</td></tr>\n";
+
+  html += "<tr><td>SQM Reference (lux)</td>"
+          "<td><input type='number' name='sqmRef' step='1' min='1' value='" +
+          String(deviceConfig.sqmReference, 0) + "' style='" + inpStyle + "'></td>"
+          "<td>Lux level that maps to SQM\u202F0.0 (default\u202F108000)</td></tr>\n";
 
   html += "<tr><td>Cloud-Clear Delta (\u00B0C)</td>"
           "<td><input type='number' name='cloudClear' step='0.5' value='" +
-          String(deviceConfig.cloudClearDelta, 1) +
-          "' style='" + inpStyle + "'></td>"
+          String(deviceConfig.cloudClearDelta, 1) + "' style='" + inpStyle + "'></td>"
           "<td>Ambient \u2212 Sky \u2265 this \u2192 0\u202F% cloud cover (clear)</td></tr>\n";
 
   html += "<tr><td>Cloud-Overcast Delta (\u00B0C)</td>"
           "<td><input type='number' name='cloudOvercast' step='0.5' value='" +
-          String(deviceConfig.cloudOvercastDelta, 1) +
-          "' style='" + inpStyle + "'></td>"
+          String(deviceConfig.cloudOvercastDelta, 1) + "' style='" + inpStyle + "'></td>"
           "<td>Ambient \u2212 Sky \u2264 this \u2192 100\u202F% cloud cover (overcast)</td></tr>\n";
+
+  // ── Imaging ──────────────────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Imaging</th></tr>\n";
+
+  html += "<tr><td>Snapshot Interval (s)</td>"
+          "<td><input type='number' name='snapSec' min='5' max='3600' step='5' value='" +
+          String(deviceConfig.snapshotIntervalSec) + "' style='" + inpStyle + "'></td>"
+          "<td>How often /thermal.jpg is regenerated (seconds)</td></tr>\n";
+
+  html += "<tr><td>JPEG Quality (0\u2013100)</td>"
+          "<td><input type='number' name='jpegQuality' min='1' max='100' step='1' value='" +
+          String(deviceConfig.jpegQuality) + "' style='" + inpStyle + "'></td>"
+          "<td>Higher = better image, larger file</td></tr>\n";
+
+  // ── Brightness sensor ─────────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Brightness Sensor (TSL2591)</th></tr>\n";
+
+  {
+    const char* timingLabels[] = {"100 ms","200 ms","300 ms (default)","400 ms","500 ms","600 ms"};
+    html += "<tr><td>Integration Time</td><td>";
+    html += "<select name='tslInteg' style='" + inpStyle + "'>";
+    for (int i = 0; i < 6; i++) {
+      html += "<option value='" + String(i) + "'";
+      if (deviceConfig.tsl2591Integration == i) html += " selected";
+      html += ">" + String(timingLabels[i]) + "</option>";
+    }
+    html += "</select></td><td>Longer integration improves dark-sky sensitivity</td></tr>\n";
+  }
+
+  // ── ASCOM ─────────────────────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>ASCOM</th></tr>\n";
+
+  html += "<tr><td>Average Period (s)</td>"
+          "<td><input type='number' name='avgPeriod' min='0' step='0.1' value='" +
+          String(deviceConfig.averagePeriod, 1) + "' style='" + inpStyle + "'></td>"
+          "<td>ObservingConditions AveragePeriod; persisted across reboots</td></tr>\n";
+
+  // ── Identity ──────────────────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Identity</th></tr>\n";
+
+  html += "<tr><td>Location</td>"
+          "<td><input type='text' name='location' maxlength='31' value='" +
+          String(deviceConfig.location) + "' style='" + inpStyle + "width:180px;'></td>"
+          "<td>Appears in Alpaca management API discovery response</td></tr>\n";
+
+  // ── Network ────────────────────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Network</th></tr>\n";
+
+  html += "<tr><td>NTP Server</td>"
+          "<td><input type='text' name='ntpServer' maxlength='63' value='" +
+          String(deviceConfig.ntpServer) + "' style='" + inpStyle + "width:180px;' placeholder='e.g. 192.168.1.1'></td>"
+          "<td>Preferred NTP server (blank = use pool.ntp.org / time.nist.gov). "
+          "Takes effect after reboot.</td></tr>\n";
 
   html += "</table>\n";
   html += "<br><input type='submit' value='Save Configuration' class='btn' style='background:#0f3460'>\n";

@@ -4,70 +4,95 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 infrared thermal camera.  It exposes a standard Alpaca API for sky temperature monitoring, plus a live thermal viewer in the browser.
+ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 infrared thermal camera and TSL2591 sky brightness sensor.  Exposes a standards-compliant Alpaca API for sky temperature, cloud cover, sky brightness, and sky quality monitoring, plus a live thermal viewer and trend charts in the browser.
 
 ## Development Environment
 
 Arduino IDE 2.x project (`.ino` entry point).  Build and flash:
 1. Open `SkyConditions_90640.ino` in Arduino IDE 2.x
-2. Board: **ESP32S3 Dev Module** (or equivalent)
-3. Install all required libraries (see below)
-4. Set port, then Upload
+2. Board: **ESP32S3 Dev Module**
+3. Enable **PSRAM** in board settings (thermal JPEG staging buffer is 230 KB)
+4. Install all required libraries (see below)
+5. Set port, then Upload
 
 No CLI build system — use Arduino IDE or `arduino-cli`.
 
 ## Required Libraries
 
-| Library | Source | Notes |
-|---------|--------|-------|
-| Adafruit MLX90640 | Library Manager | Thermal sensor driver |
-| WiFiManager (tzapu) | Library Manager | Captive-portal WiFi setup |
-| arduinoWebSockets (Markus Sattler) | Library Manager | `WebSocketsServer.h` |
-| ElegantOTA | Library Manager | OTA updates via `/update` |
-| esp32-idf-ascom-alpaca (Dark Dragons Astro) | ZIP install | ASCOM Alpaca framework |
+| Library | Source |
+|---------|--------|
+| Adafruit MLX90640 | Library Manager |
+| Adafruit TSL2591 | Library Manager |
+| WiFiManager (tzapu) | Library Manager |
+| arduinoWebSockets (Markus Sattler) | Library Manager |
+| ElegantOTA | Library Manager |
+| ArduinoJson | Library Manager |
 
-The Dark Dragons library is an ESP-IDF component that also works inside Arduino-ESP32.  Install it as a ZIP via **Sketch → Include Library → Add .ZIP Library**.
+The ASCOM Alpaca protocol is implemented directly using the Arduino `WebServer` and `WiFiUDP` classes — no external Alpaca framework library is used.
 
 ## Architecture
-
-The project follows the same multi-file structure as the `rain_monitor` reference device.
 
 ### File Map
 
 | File | Purpose |
 |------|---------|
-| `SkyConditions_90640.ino` | Entry point: WiFi, sensor init, ASCOM server, main loop |
+| `SkyConditions_90640.ino` | Entry point: WiFi, NTP, sensor init, main loop |
 | `config.h` | All compile-time constants (pins, ports, FOV bounds, frame format) |
-| `debug.h` / `debug.cpp` | Conditional serial debug wrapper |
-| `sky_sensor.h` / `sky_sensor.cpp` | `SkyConditions` class – extends `AlpacaServer::ObservingConditions` |
-| `web_ui_handler.h` / `web_ui_handler.cpp` | Arduino `WebServer` (port 80) + `WebSocketsServer` (port 81) |
-| `html_templates.h` | Inline HTML/CSS/JS generators for home and setup pages |
-| `rain_monitor/` | Reference implementation (rain safety monitor) – do not modify |
+| `config_store.h/.cpp` | `DeviceConfig` struct + NVS Preferences load/save |
+| `debug.h/.cpp` | Conditional serial debug wrapper (`Debug.print*`) |
+| `sky_sensor.h/.cpp` | `SkyConditions` class – sensor data, stats, cloud cover, WebSocket frame |
+| `alpaca.h/.cpp` | ASCOM Alpaca HTTP server (port 11111) + UDP discovery FreeRTOS task |
+| `web_ui_handler.h/.cpp` | Arduino `WebServer` (port 80) + `WebSocketsServer` (port 81) |
+| `html_templates.h` | Inline HTML/CSS/JS generators for home, trends, and setup pages |
+| `history.h/.cpp` | Dual-resolution history ring buffers (30 s / 15 min buckets) |
 
 ### Communication Stack
 
 ```
-MLX90640 --[I2C SDA=8/SCL=9 @ 400kHz]--> ESP32-S3 --[WiFi]-->
-    Port  80: Web UI (Arduino WebServer)
-    Port  81: Live thermal WebSocket (binary, 784 bytes/frame @ 2 Hz)
-    Port 11111: ASCOM Alpaca API (ESP-IDF httpd, Dark Dragons library)
-    UDP 32227: Alpaca discovery
+MLX90640 ──[I2C SDA=8/SCL=9 @ 400kHz]──┐
+TSL2591  ──[I2C SDA=8/SCL=9 @ 400kHz]──┴──> ESP32-S3 ──[WiFi]──>
+    Port     80: Web UI (Arduino WebServer)
+    Port     81: Live thermal WebSocket (binary, 784 bytes/frame @ 2 Hz)
+    Port  11111: ASCOM Alpaca API (Arduino WebServer, custom implementation)
+    UDP   32227: Alpaca discovery (FreeRTOS task, Core 0)
 ```
 
-### ASCOM Integration
+### ASCOM Alpaca Implementation
 
-The `SkyConditions` class in `sky_sensor.h/.cpp` extends `AlpacaServer::ObservingConditions` from the Dark Dragons library.  The `AlpacaServer::Api` object is created in `setup()` and calls `register_routes()` on an ESP-IDF `httpd_handle_t` server running on port 11111.
+The Alpaca protocol is implemented from scratch in `alpaca.cpp` using the Arduino `WebServer` on port 11111.  There is no external Alpaca framework dependency.
 
-**Implemented ASCOM properties:**
-- `SkyTemperature` — average of the center 50% FOV pixels (16×12 = 192 pixels)
-- `Temperature` — MLX90640 die temperature (ambient proxy)
-- `TimeSinceLastUpdate`, `SensorDescription`, `AveragePeriod`, `Refresh`
+**Implemented ASCOM properties/methods:**
 
-All other `ObservingConditions` properties return `ALPACA_ERR_NOT_IMPLEMENTED`.
+| Property / Method | Source | Notes |
+|-------------------|--------|-------|
+| `SkyTemperature` | MLX90640 | Average of center 16×12 = 192 pixels |
+| `Temperature` | MLX90640 | Sensor die temperature |
+| `CloudCover` | MLX90640 | Linear interp on ambient−sky delta |
+| `SkyBrightness` | TSL2591 | Broadband lux, auto-gain |
+| `SkyQuality` | TSL2591 | SQM mag/arcsec² |
+| `TimeSinceLastUpdate(name)` | — | All implemented sensors + `""` (LatestUpdateTime) |
+| `SensorDescription(name)` | — | All implemented sensors |
+| `AveragePeriod` | NVS | Persisted across reboots |
+| `Refresh` | — | Forces immediate sensor read |
+
+All other `ObservingConditions` properties return `NotImplementedException` (error 1024).
+
+**Key Alpaca protocol details:**
+- `ClientID` / `ClientTransactionID` are matched case-insensitively; all other PUT parameters (e.g. `AveragePeriod`, `Connected`) are case-sensitive per spec
+- Syntactically malformed requests (missing parameter, non-numeric value) → HTTP 400
+- Semantically invalid values (e.g. negative `AveragePeriod`) → HTTP 200 + `ErrorNumber: 1025`
+- `LatestUpdateTime` is tested by Conform as `TimeSinceLastUpdate("")` — returns a `double` (seconds since most recent sensor update across all sensors), not a DateTime string
+- `SensorDescription` and `TimeSinceLastUpdate` for valid-but-unimplemented sensor names return error 1024, which prevents Conform's 6-retry loop
+
+### UDP Discovery
+
+Discovery runs in a dedicated FreeRTOS task pinned to Core 0 (`alpaca_disc`, stack 2048 bytes, priority 1).  This ensures immediate responses even while `mlx.getFrame()` blocks Core 1 for ~500 ms at 2 Hz.  The task owns its own `WiFiUDP` object; `handleAlpacaDiscovery()` in the main loop is a no-op.
 
 ### Thread Safety
 
-The ASCOM HTTP handlers run in a separate ESP-IDF task.  `SkyConditions` uses a `portMUX_TYPE` critical section to protect the five scalar stats (`_skyTemperature`, `_minTemperature`, `_maxTemperature`, `_medianTemperature`, `_ambientTemperature`).  The raw `_frame[768]` array is only accessed from the Arduino main loop and does not need locking.
+Both the ASCOM HTTP handlers and the Web UI handlers run on Core 1 (Arduino main loop) — no locking is needed between them.  The UDP discovery task on Core 0 does not access any shared data.
+
+The `_frame[768]` array in `SkyConditions` is only written from `readSensor()` and only read from the same main loop, so no mutex is needed.
 
 ### WebSocket Binary Frame Format (784 bytes)
 
@@ -81,17 +106,44 @@ The ASCOM HTTP handlers run in a separate ESP-IDF task.  `SkyConditions` uses a 
 
 ### Center FOV Definition
 
-The sensor is 32 cols × 24 rows.  The center 50% of each linear dimension is:
-- Columns 8–23 (16 cols)
-- Rows 6–17 (12 rows)
-- 192 pixels total
+32 cols × 24 rows.  Center 50% of each linear dimension:
+- Columns 8–23 (16 cols), Rows 6–17 (12 rows) = 192 pixels total
 
 Constants in `config.h`: `CENTER_COL_START`, `CENTER_COL_END`, `CENTER_ROW_START`, `CENTER_ROW_END`.
 
+### History Ring Buffers
+
+Two resolutions in `history.h/.cpp`:
+- **Hi-res**: 120 buckets × 30 s = 60 minutes
+- **Lo-res**: 96 buckets × 15 min = 24 hours
+
+Each bucket stores avg/lo/hi for 8 metrics: sky temp, frame min/max, median, ambient, cloud cover, lux, SQM.  Served as JSON from `GET /history.json?minutes=N`.
+
+### Persistent Configuration (`DeviceConfig`)
+
+All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (keys ≤ 15 chars).  Loaded in `setup()` before `configTime()` and the Alpaca server start so that `ntpServer` is available for the NTP call.
+
+| Field | NVS key | Default |
+|-------|---------|---------|
+| `sqmOffset` | `sqmOffset` | 0.0 |
+| `sqmReference` | `sqmRef` | 108000.0 lux |
+| `cloudClearDelta` | `cldClear` | 20.0 °C |
+| `cloudOvercastDelta` | `cldOvercast` | 5.0 °C |
+| `snapshotIntervalSec` | `snapSec` | 30 s |
+| `jpegQuality` | `jpegQuality` | 80 |
+| `tsl2591Integration` | `tslInteg` | 2 (300 ms) |
+| `averagePeriod` | `avgPeriod` | 0.5 s |
+| `location` | `location` | "Observatory" |
+| `ntpServer` | `ntpServer` | "" (use pool.ntp.org / time.nist.gov) |
+
+### NTP
+
+`configTime(0, 0, ...)` is called after WiFi connects.  If `deviceConfig.ntpServer` is non-empty it is used as the preferred server (first argument); `pool.ntp.org` and `time.nist.gov` are always passed as fallbacks.  Configurable via the Setup page → Network section.
+
 ## WiFi
 
-Credentials are managed by WiFiManager.  On first boot (or after `/reset_wifi`) the device creates a captive portal AP named **SkyCond-Setup** (password: `skycond123`).
+Credentials managed by WiFiManager.  On first boot (or after `POST /reset_wifi`) the device creates captive portal AP **SkyCond-Setup** (password: `skycond123`).
 
-## Planned Extensions
+## CONFORM Status
 
-A second I2C device for sky brightness will be added later.  The `SkyConditions` class already stubs out `get_skybrightness()` returning `ALPACA_ERR_NOT_IMPLEMENTED`.
+Passes ASCOM Conform Universal 4.2.1 with **0 errors, 0 issues**.  The Alpaca Protocol Check also passes with 0 errors, 0 issues (2 INFO messages about case-insensitive `ClientTransactionID` handling, which is correct per spec and cannot be suppressed).

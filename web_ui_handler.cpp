@@ -106,7 +106,7 @@ void updateThermalSnapshot()
   JpegOutCtx ctx = {0, false};
   const size_t scaledBytes = (size_t)SNAP_W * SNAP_H * 3;
   bool ok = fmt2jpg_cb(scaledBuf, scaledBytes,
-                       SNAP_W, SNAP_H, PIXFORMAT_RGB888, 80,
+                       SNAP_W, SNAP_H, PIXFORMAT_RGB888, deviceConfig.jpegQuality,
                        jpegOutCb, &ctx);
   if (ok && !ctx.overflow) {
     jpegOutLen     = ctx.written;
@@ -169,10 +169,31 @@ static void handleSaveConfig()
 {
   if (webUiServer.hasArg("sqmOffset"))
     deviceConfig.sqmOffset = webUiServer.arg("sqmOffset").toFloat();
+  if (webUiServer.hasArg("sqmRef"))
+    deviceConfig.sqmReference = webUiServer.arg("sqmRef").toFloat();
   if (webUiServer.hasArg("cloudClear"))
     deviceConfig.cloudClearDelta = webUiServer.arg("cloudClear").toFloat();
   if (webUiServer.hasArg("cloudOvercast"))
     deviceConfig.cloudOvercastDelta = webUiServer.arg("cloudOvercast").toFloat();
+  if (webUiServer.hasArg("snapSec"))
+    deviceConfig.snapshotIntervalSec = (uint16_t)webUiServer.arg("snapSec").toInt();
+  if (webUiServer.hasArg("jpegQuality"))
+    deviceConfig.jpegQuality = (uint8_t)constrain(webUiServer.arg("jpegQuality").toInt(), 1, 100);
+  if (webUiServer.hasArg("tslInteg"))
+    deviceConfig.tsl2591Integration = (uint8_t)constrain(webUiServer.arg("tslInteg").toInt(), 0, 5);
+  if (webUiServer.hasArg("avgPeriod"))
+    deviceConfig.averagePeriod = webUiServer.arg("avgPeriod").toDouble();
+  if (webUiServer.hasArg("location")) {
+    String loc = webUiServer.arg("location");
+    strncpy(deviceConfig.location, loc.c_str(), sizeof(deviceConfig.location) - 1);
+    deviceConfig.location[sizeof(deviceConfig.location) - 1] = '\0';
+  }
+  if (webUiServer.hasArg("ntpServer")) {
+    String ntp = webUiServer.arg("ntpServer");
+    ntp.trim();
+    strncpy(deviceConfig.ntpServer, ntp.c_str(), sizeof(deviceConfig.ntpServer) - 1);
+    deviceConfig.ntpServer[sizeof(deviceConfig.ntpServer) - 1] = '\0';
+  }
   configSave(deviceConfig);
   Debug.println("Config saved via web UI");
   webUiServer.sendHeader("Location", "/setup");
@@ -223,7 +244,7 @@ void handleWebUI()
   webUiServer.handleClient();
   wsServer.loop();
 
-  if (millis() - lastJpegUpdate >= JPEG_INTERVAL_MS) {
+  if (millis() - lastJpegUpdate >= (unsigned long)deviceConfig.snapshotIntervalSec * 1000UL) {
     updateThermalSnapshot();
   }
 }

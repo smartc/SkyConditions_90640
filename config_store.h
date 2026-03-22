@@ -6,17 +6,30 @@
 #include "config.h"
 
 /*
- * DeviceConfig – calibration and threshold values stored in NVS flash.
- *
- * Defaults:
- *   sqmOffset          =  0.0   (mag/arcsec² additive correction)
- *   cloudClearDelta    = 20.0   (ambient − sky ≥ this → 0 % cloud cover)
- *   cloudOvercastDelta =  5.0   (ambient − sky ≤ this → 100 % cloud cover)
+ * DeviceConfig – all runtime-tunable settings stored in NVS flash.
  */
 struct DeviceConfig {
-  float sqmOffset;           // mag/arcsec² additive offset on SQM
-  float cloudClearDelta;     // °C delta for "clear" (fully clear sky)
-  float cloudOvercastDelta;  // °C delta for "overcast" (fully overcast)
+  // Calibration
+  float    sqmOffset;            // mag/arcsec² additive offset on SQM
+  float    sqmReference;         // lux value that maps to SQM 0.0 (formula: -2.5*log10(lux/ref)+offset)
+  float    cloudClearDelta;      // °C (ambient−sky) ≥ this → 0% cloud cover
+  float    cloudOvercastDelta;   // °C (ambient−sky) ≤ this → 100% cloud cover
+
+  // Imaging
+  uint16_t snapshotIntervalSec;  // thermal JPEG refresh interval (seconds)
+  uint8_t  jpegQuality;          // JPEG quality 0–100
+
+  // Brightness sensor
+  uint8_t  tsl2591Integration;   // TSL2591 integration time enum (0=100ms … 5=600ms)
+
+  // ASCOM
+  double   averagePeriod;        // ObservingConditions AveragePeriod (seconds)
+
+  // Identity
+  char     location[32];         // Location string in Alpaca management API
+
+  // Network
+  char     ntpServer[64];        // Preferred NTP server (blank = use defaults only)
 };
 
 // Load settings from NVS; fills in defaults if keys are absent.

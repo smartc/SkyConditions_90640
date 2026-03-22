@@ -10,6 +10,7 @@
 
 #include "alpaca.h"
 #include "sky_sensor.h"
+#include "config_store.h"
 #include "debug.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -18,6 +19,31 @@ WebServer alpacaServer(ALPACA_PORT);
 WiFiUDP   alpacaUdp;
 
 static uint32_t serverTxID = 0;
+
+// ---------------------------------------------------------------------------
+// Case-insensitive query-parameter helpers
+// (Alpaca spec requires servers to accept parameters regardless of casing.)
+// ---------------------------------------------------------------------------
+
+static bool hasArgCI(const String& name)
+{
+  String lower = name; lower.toLowerCase();
+  for (int i = 0; i < alpacaServer.args(); i++) {
+    String n = alpacaServer.argName(i); n.toLowerCase();
+    if (n == lower) return true;
+  }
+  return false;
+}
+
+static String getArgCI(const String& name)
+{
+  String lower = name; lower.toLowerCase();
+  for (int i = 0; i < alpacaServer.args(); i++) {
+    String n = alpacaServer.argName(i); n.toLowerCase();
+    if (n == lower) return alpacaServer.arg(i);
+  }
+  return "";
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,8 +62,11 @@ static String getUniqueID()
 static void setCommonFields(JsonDocument &json)
 {
   uint32_t clientTxID = 0;
-  if (alpacaServer.hasArg("ClientTransactionID"))
-    clientTxID = alpacaServer.arg("ClientTransactionID").toInt();
+  if (hasArgCI("ClientTransactionID")) {
+    long raw = getArgCI("ClientTransactionID").toInt();
+    if (raw > 0) clientTxID = (uint32_t)raw;
+    // negative or non-numeric: leave as 0 per Alpaca spec
+  }
 
   json["ClientTransactionID"] = clientTxID;
   json["ServerTransactionID"] = ++serverTxID;
@@ -45,12 +74,17 @@ static void setCommonFields(JsonDocument &json)
   if (!json.containsKey("ErrorMessage")) json["ErrorMessage"] = "";
 }
 
-static void sendJSON(JsonDocument &json)
+static void sendJSONStatus(JsonDocument &json, int httpStatus)
 {
   setCommonFields(json);
   String s;
   serializeJson(json, s);
-  alpacaServer.send(200, "application/json", s);
+  alpacaServer.send(httpStatus, "application/json", s);
+}
+
+static void sendJSON(JsonDocument &json)
+{
+  sendJSONStatus(json, 200);
 }
 
 static void sendDouble(double value)
@@ -63,7 +97,7 @@ static void sendDouble(double value)
 static void sendNotImplemented()
 {
   StaticJsonDocument<256> json;
-  json["ErrorNumber"]  = 1035;  // PropertyNotImplementedException
+  json["ErrorNumber"]  = 1024;  // NotImplementedException – tells Conform not to retry
   json["ErrorMessage"] = "Property not implemented";
   sendJSON(json);
 }
@@ -107,7 +141,7 @@ static void handleManagementDescription()
   val["ServerName"]          = SERVER_NAME;
   val["Manufacturer"]        = MANUFACTURER;
   val["ManufacturerVersion"] = MANUFACTURER_V;
-  val["Location"]            = LOCATION;
+  val["Location"]            = deviceConfig.location;
   sendJSON(json);
 }
 
@@ -127,7 +161,12 @@ static void handleAlpacaSetup()
 
 static void handleNotFound()
 {
-  alpacaServer.send(400, "text/plain", "Not found: " + alpacaServer.uri());
+  StaticJsonDocument<256> json;
+  json["ErrorNumber"]  = 1024;
+  json["ErrorMessage"] = "Not found: " + alpacaServer.uri();
+  setCommonFields(json);
+  String s; serializeJson(json, s);
+  alpacaServer.send(400, "application/json", s);
 }
 
 static void handleActionNotImpl()
@@ -148,15 +187,21 @@ static void handleGetConnected()
 static void handlePutConnected()
 {
   StaticJsonDocument<256> json;
-  if (alpacaServer.hasArg("Connected")) {
-    String s = alpacaServer.arg("Connected");
-    s.toLowerCase();
-    skyConditions.setConnected(s == "true");
-    json["Value"] = skyConditions.getConnected();
-  } else {
+  if (!hasArgCI("Connected")) {
     json["ErrorNumber"]  = 1025;
     json["ErrorMessage"] = "Missing Connected parameter";
+    sendJSONStatus(json, 400);
+    return;
   }
+  String s = getArgCI("Connected");
+  String sl = s; sl.toLowerCase();
+  if (sl != "true" && sl != "false") {
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Connected value must be 'true' or 'false'";
+    sendJSONStatus(json, 400);
+    return;
+  }
+  skyConditions.setConnected(sl == "true");
   sendJSON(json);
 }
 
@@ -214,16 +259,44 @@ static void handleGetAveragePeriod()
 static void handlePutAveragePeriod()
 {
   StaticJsonDocument<256> json;
-  if (alpacaServer.hasArg("AveragePeriod")) {
-    double v = alpacaServer.arg("AveragePeriod").toDouble();
-    if (!skyConditions.setAveragePeriod(v)) {
-      json["ErrorNumber"]  = 1025;
-      json["ErrorMessage"] = "AveragePeriod must be >= 0";
-    }
-  } else {
+  // Parameter name is case-sensitive per Alpaca spec (only ClientID/ClientTransactionID are not).
+  if (!alpacaServer.hasArg("AveragePeriod")) {
     json["ErrorNumber"]  = 1025;
     json["ErrorMessage"] = "Missing AveragePeriod parameter";
+    sendJSONStatus(json, 400);
+    return;
   }
+  // Validate the parameter is actually a numeric string before parsing.
+  // toDouble() silently returns 0.0 for non-numeric strings, masking malformed requests.
+  // Syntactically malformed (non-numeric) → HTTP 400; semantically invalid (negative) → HTTP 200 + error.
+  String valStr = alpacaServer.arg("AveragePeriod");
+  valStr.trim();
+  bool isNumeric = valStr.length() > 0;
+  if (isNumeric) {
+    int start = (valStr[0] == '-' || valStr[0] == '+') ? 1 : 0;
+    if (start >= (int)valStr.length()) isNumeric = false;
+    bool hasDot = false;
+    for (int i = start; i < (int)valStr.length() && isNumeric; i++) {
+      if (valStr[i] == '.' && !hasDot) hasDot = true;
+      else if (!isDigit(valStr[i]))    isNumeric = false;
+    }
+  }
+  if (!isNumeric) {
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "AveragePeriod value is not a valid number";
+    sendJSONStatus(json, 400);
+    return;
+  }
+  double v = valStr.toDouble();
+  if (v < 0.0) {
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "AveragePeriod must be >= 0";
+    sendJSON(json);  // HTTP 200 + error code per Alpaca spec (semantic error, not malformed request)
+    return;
+  }
+  skyConditions.setAveragePeriod(v);
+  deviceConfig.averagePeriod = v;
+  configSave(deviceConfig);
   sendJSON(json);
 }
 
@@ -261,14 +334,45 @@ static void handleGetSkyQuality()
   sendDouble(skyConditions.getSqm());
 }
 
+// Full set of valid ObservingConditions sensor names (lowercase).
+// SensorName "" means "all sensors" and is also valid.
+static bool isValidSensorName(const String& nameLower)
+{
+  return nameLower == ""             || nameLower == "cloudcover"    ||
+         nameLower == "dewpoint"     || nameLower == "humidity"      ||
+         nameLower == "pressure"     || nameLower == "rainrate"      ||
+         nameLower == "skybrightness"|| nameLower == "skyquality"    ||
+         nameLower == "skytemperature"|| nameLower == "starfwhm"     ||
+         nameLower == "temperature"  || nameLower == "winddirection"  ||
+         nameLower == "windgust"     || nameLower == "windspeed";
+}
+
 static void handleGetTimeSinceLastUpdate()
 {
   String sensor = alpacaServer.arg("SensorName");
-  sensor.toLowerCase();
-  if (sensor == "skytemperature" || sensor == "temperature" || sensor == "cloudcover") {
+  String sensorLow = sensor; sensorLow.toLowerCase();
+
+  if (!isValidSensorName(sensorLow)) {
+    StaticJsonDocument<256> json;
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Unknown SensorName: " + sensor;
+    sendJSONStatus(json, 400);
+    return;
+  }
+
+  if (sensorLow == "") {
+    // Empty SensorName = LatestUpdateTime: time since the most recent update across ALL sensors.
+    if (!skyConditions.hasData() && !skyConditions.hasBrightnessData()) { sendValueNotSet(); return; }
+    unsigned long mostRecent = skyConditions.hasData() ? skyConditions.getLastUpdateMillis() : 0;
+    if (skyConditions.hasBrightnessData()) {
+      unsigned long bMillis = skyConditions.getLastBrightnessMillis();
+      if (bMillis > mostRecent) mostRecent = bMillis;
+    }
+    sendDouble((millis() - mostRecent) / 1000.0);
+  } else if (sensorLow == "skytemperature" || sensorLow == "temperature" || sensorLow == "cloudcover") {
     if (!skyConditions.hasData()) { sendValueNotSet(); return; }
     sendDouble((millis() - skyConditions.getLastUpdateMillis()) / 1000.0);
-  } else if (sensor == "skybrightness" || sensor == "skyquality") {
+  } else if (sensorLow == "skybrightness" || sensorLow == "skyquality") {
     if (!skyConditions.hasBrightnessData()) { sendValueNotSet(); return; }
     sendDouble((millis() - skyConditions.getLastBrightnessMillis()) / 1000.0);
   } else {
@@ -279,20 +383,29 @@ static void handleGetTimeSinceLastUpdate()
 static void handleGetSensorDescription()
 {
   String sensor = alpacaServer.arg("SensorName");
-  sensor.toLowerCase();
+  String sensorLow = sensor; sensorLow.toLowerCase();
+
+  if (!isValidSensorName(sensorLow)) {
+    StaticJsonDocument<256> json;
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Unknown SensorName: " + sensor;
+    sendJSONStatus(json, 400);
+    return;
+  }
+
   StaticJsonDocument<300> json;
-  if (sensor == "skytemperature") {
+  if (sensorLow == "skytemperature") {
     json["Value"] = "Average temperature of the center 50% of the MLX90640 FOV (192 pixels, 16x12)";
-  } else if (sensor == "temperature") {
+  } else if (sensorLow == "temperature") {
     json["Value"] = "MLX90640 sensor die/ambient temperature";
-  } else if (sensor == "skybrightness") {
+  } else if (sensorLow == "skybrightness") {
     json["Value"] = "TSL2591 broadband visible+IR illuminance in lux";
-  } else if (sensor == "skyquality") {
+  } else if (sensorLow == "skyquality") {
     json["Value"] = "Sky quality in mag/arcsec^2 derived from TSL2591 lux reading";
-  } else if (sensor == "cloudcover") {
+  } else if (sensorLow == "cloudcover") {
     json["Value"] = "Cloud cover % estimated from ambient-sky temperature deficit (MLX90640)";
   } else {
-    json["ErrorNumber"]  = 1035;
+    json["ErrorNumber"]  = 1024;  // NotImplementedException – tells Conform not to retry
     json["ErrorMessage"] = "Sensor not implemented";
   }
   sendJSON(json);
@@ -380,39 +493,60 @@ static void registerRoutes()
 }
 
 // ---------------------------------------------------------------------------
+// UDP Discovery – FreeRTOS task on Core 0 (WiFi core)
+//
+// Runs independently of the main loop so that blocking sensor reads
+// (mlx.getFrame() can hold Core 1 for ~500 ms) do not delay the response.
+// Uses its own WiFiUDP object to avoid any shared-state issues.
+// ---------------------------------------------------------------------------
+
+static void discoveryTask(void *)
+{
+  WiFiUDP udp;
+  udp.begin(ALPACA_DISCOVERY_PORT);
+  Debug.println("[Discovery] task started on Core " + String(xPortGetCoreID()));
+
+  for (;;) {
+    int pktSize = udp.parsePacket();
+    if (pktSize > 0) {
+      char buf[64];
+      int n = udp.read(buf, sizeof(buf) - 1);
+      if (n > 0) {
+        buf[n] = '\0';
+        String s = String(buf);
+        s.trim();
+        if (s.equalsIgnoreCase("alpacadiscovery1")) {
+          String resp = "{\"AlpacaPort\":" + String(ALPACA_PORT) + "}";
+          udp.beginPacket(udp.remoteIP(), udp.remotePort());
+          udp.print(resp);
+          int ok = udp.endPacket();
+          Debug.printf("[Discovery] replied to %s (ok=%d)\n",
+                       udp.remoteIP().toString().c_str(), ok);
+        }
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));  // 10 ms poll – fast enough, not a busy-wait
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 void setupAlpacaServer()
 {
+  // Restore persisted ASCOM state.
+  skyConditions.setAveragePeriod(deviceConfig.averagePeriod);
+
   registerRoutes();
   alpacaServer.begin();
   Debug.println("ASCOM Alpaca server started on port " + String(ALPACA_PORT));
 
-  alpacaUdp.begin(ALPACA_DISCOVERY_PORT);
-  Debug.println("Alpaca discovery started on UDP port " + String(ALPACA_DISCOVERY_PORT));
+  // Pin the discovery task to Core 0 alongside the WiFi stack so it responds
+  // immediately regardless of what Core 1 (the Arduino loop) is doing.
+  xTaskCreatePinnedToCore(discoveryTask, "alpaca_disc",
+                          2048, nullptr, 1, nullptr, 0);
 }
 
-// ---------------------------------------------------------------------------
-// UDP Discovery  (call from main loop)
-// ---------------------------------------------------------------------------
-
-void handleAlpacaDiscovery()
-{
-  int packetSize = alpacaUdp.parsePacket();
-  if (!packetSize) return;
-
-  char buf[packetSize + 1];
-  alpacaUdp.read(buf, packetSize);
-  buf[packetSize] = '\0';
-
-  String s = String(buf);
-  s.trim();
-  if (s == "alpacadiscovery1") {
-    String resp = "{\"AlpacaPort\":" + String(ALPACA_PORT) + "}";
-    alpacaUdp.beginPacket(alpacaUdp.remoteIP(), alpacaUdp.remotePort());
-    alpacaUdp.print(resp);
-    alpacaUdp.endPacket();
-    Debug.println("Replied to Alpaca discovery from " + alpacaUdp.remoteIP().toString());
-  }
-}
+// No-op: discovery is now handled by the FreeRTOS task above.
+void handleAlpacaDiscovery() {}

@@ -115,7 +115,7 @@ void SkyConditions::updateBrightness(float lux)
   // SQM (mag/arcsec²) approximation from illuminance.
   // Clamped to 1e-6 lux minimum to avoid log(0).
   float safeLux = (lux > 1e-6f) ? lux : 1e-6f;
-  _sqm = -2.5f * log10f(safeLux / 108000.0f) + deviceConfig.sqmOffset;
+  _sqm = -2.5f * log10f(safeLux / deviceConfig.sqmReference) + deviceConfig.sqmOffset;
 
   _lastBrightnessMillis = millis();
   _hasBrightnessData    = true;
