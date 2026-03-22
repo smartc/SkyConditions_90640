@@ -1,0 +1,25 @@
+#ifndef WEB_UI_HANDLER_H
+#define WEB_UI_HANDLER_H
+
+#include <WebServer.h>
+#include <WebSocketsServer.h>
+#include <WiFiManager.h>
+#include "config.h"
+#include "debug.h"
+#include "sky_sensor.h"
+
+// Forward declarations for HTML template functions
+String getHomePage();
+String getSetupPage();
+
+// Shared server instances (used by main sketch for ElegantOTA)
+extern WebServer      webUiServer;
+extern WebSocketsServer wsServer;
+
+// Function prototypes
+void initWebUI();
+void handleWebUI();
+void broadcastThermalFrame();
+void updateThermalSnapshot();  // regenerate cached /thermal.jpg
+
+#endif // WEB_UI_HANDLER_H
