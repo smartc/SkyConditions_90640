@@ -1,4 +1,5 @@
 #include "sky_sensor.h"
+#include "config_store.h"
 #include "debug.h"
 #include <algorithm>
 #include <cstring>
@@ -20,6 +21,7 @@ SkyConditions::SkyConditions()
     _sqm(0.0f),
     _hasBrightnessData(false),
     _lastBrightnessMillis(0),
+    _cloudCover(50.0f),
     _averagePeriod(0.5),
     _connected(true),
     _refreshRequested(false)
@@ -36,8 +38,23 @@ void SkyConditions::update(float *frame, float ambientTemp)
   memcpy(_frame, frame, SENSOR_PIXELS * sizeof(float));
   computeStats();
   _ambientTemperature = ambientTemp;
-  _lastUpdateMillis   = millis();
-  _hasData            = true;
+
+  // Cloud cover: linear interpolation on (ambient – sky) delta.
+  // delta >= cloudClearDelta    → 0 % (clear)
+  // delta <= cloudOvercastDelta → 100 % (overcast)
+  float delta = ambientTemp - _skyTemperature;
+  float span  = deviceConfig.cloudClearDelta - deviceConfig.cloudOvercastDelta;
+  if (span > 0.01f) {
+    float t = (delta - deviceConfig.cloudOvercastDelta) / span;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    _cloudCover = (1.0f - t) * 100.0f;
+  } else {
+    _cloudCover = 50.0f;  // degenerate config – neutral value
+  }
+
+  _lastUpdateMillis = millis();
+  _hasData          = true;
 }
 
 void SkyConditions::computeStats()
@@ -98,7 +115,7 @@ void SkyConditions::updateBrightness(float lux)
   // SQM (mag/arcsec²) approximation from illuminance.
   // Clamped to 1e-6 lux minimum to avoid log(0).
   float safeLux = (lux > 1e-6f) ? lux : 1e-6f;
-  _sqm = -2.5f * log10f(safeLux / 108000.0f);
+  _sqm = -2.5f * log10f(safeLux / 108000.0f) + deviceConfig.sqmOffset;
 
   _lastBrightnessMillis = millis();
   _hasBrightnessData    = true;

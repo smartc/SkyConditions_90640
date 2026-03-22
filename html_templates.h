@@ -5,6 +5,7 @@
 #include <WiFi.h>
 #include "config.h"
 #include "sky_sensor.h"
+#include "config_store.h"
 
 // ---------------------------------------------------------------------------
 // Shared CSS
@@ -114,6 +115,10 @@ inline String getHomePage()
           "    <div class='stat-value amb-temp' id='amb-temp'>" +
           (skyConditions.hasData() ? String(skyConditions.getAmbientTemperature(), 1) + "°C" : "--") +
           "</div></div>\n";
+  html += "  <div class='stat-box'><div class='stat-label'>Cloud Cover</div>"
+          "    <div class='stat-value' style='color:#dfe6e9' id='cloud-cover'>" +
+          (skyConditions.hasData() ? String(skyConditions.getCloudCover(), 0) + "%" : "--") +
+          "</div></div>\n";
   html += "  <div class='stat-box'><div class='stat-label'>Sky Brightness</div>"
           "    <div class='stat-value' style='color:#fdcb6e'>" +
           (skyConditions.hasBrightnessData() ? String(skyConditions.getLux(), 4) + " lux" : "--") +
@@ -132,8 +137,7 @@ inline String getHomePage()
           String(JPEG_INTERVAL_MS / 1000) + " s &nbsp;&middot;&nbsp; "
           "<a href='/thermal.jpg'>direct link</a></p>\n";
   html += "<img id='thermal-snap' src='/thermal.jpg' "
-          "style='display:block;margin:0 auto;image-rendering:pixelated;"
-          "width:320px;height:240px;border-radius:4px;'>\n";
+          "style='display:block;margin:0 auto;max-width:100%;border-radius:4px;'>\n";
   html += "</div>\n";
 
   // Device info
@@ -147,7 +151,8 @@ inline String getHomePage()
   html += "<tr><td>SSID</td><td>"        + WiFi.SSID()              + "</td></tr>\n";
   html += "<tr><td>Signal</td><td>"      + String(WiFi.RSSI())      + " dBm</td></tr>\n";
   html += "<tr><td>ASCOM Port</td><td>"  + String(ALPACA_PORT)      + "</td></tr>\n";
-  html += "<tr><td>Uptime</td><td>"      + String(millis()/60000)   + " min</td></tr>\n";
+  html += "<tr><td>Uptime</td><td><span id='uptime' data-s='" +
+          String(millis()/1000) + "'></span></td></tr>\n";
   html += "<tr><td>Free Heap</td><td>"   + String(ESP.getFreeHeap()) + " bytes</td></tr>\n";
   html += "</table>\n";
   html += "</div>\n";
@@ -247,6 +252,24 @@ function connect() {
 
 connect();
 
+// Real-time uptime counter.
+(function() {
+  const el = document.getElementById('uptime');
+  if (!el) return;
+  let sec = parseInt(el.dataset.s, 10);
+  function fmt(s) {
+    const d = Math.floor(s / 86400);
+    const h = Math.floor(s % 86400 / 3600);
+    const m = Math.floor(s % 3600 / 60);
+    const ss = s % 60;
+    if (d > 0) return d + 'd ' + h + 'h ' + m + 'm';
+    if (h > 0) return h + 'h ' + m + 'm ' + ss + 's';
+    return m + 'm ' + ss + 's';
+  }
+  el.textContent = fmt(sec);
+  setInterval(function() { el.textContent = fmt(++sec); }, 1000);
+})();
+
 // Auto-refresh the static JPEG snapshot.
 setInterval(() => {
   const img = document.getElementById('thermal-snap');
@@ -311,7 +334,7 @@ inline String getSetupPage()
   html += "<tr><td>Discovery Port</td><td>" + String(ALPACA_DISCOVERY_PORT) + "</td></tr>\n";
   html += "<tr><td>API Base URL</td><td>http://" + WiFi.localIP().toString() +
           ":" + String(ALPACA_PORT) + "/api/v1/observingconditions/0</td></tr>\n";
-  html += "<tr><td>Implemented Sensors</td><td>SkyTemperature, Temperature, SkyBrightness, SkyQuality</td></tr>\n";
+  html += "<tr><td>Implemented Sensors</td><td>SkyTemperature, Temperature, SkyBrightness, SkyQuality, CloudCover</td></tr>\n";
   html += "</table>\n";
   html += "</div>\n";
 
@@ -331,6 +354,39 @@ inline String getSetupPage()
           String(CENTER_PIXEL_COUNT) + " pixels)</td></tr>\n";
   html += "<tr><td>ESP32 Free Heap</td><td>" + String(ESP.getFreeHeap()) + " bytes</td></tr>\n";
   html += "</table>\n";
+  html += "</div>\n";
+
+  // Calibration / config
+  html += "<div class='card'>\n";
+  html += "<h2>Calibration</h2>\n";
+  html += "<p style='font-size:0.85em;color:#8899aa'>Settings are saved persistently in NVS flash.</p>\n";
+  html += "<form action='/save_config' method='POST'>\n";
+  html += "<table><tr><th>Parameter</th><th>Value</th><th>Description</th></tr>\n";
+
+  String inpStyle = "width:90px;background:#1a1a2e;color:#e0e0e0;"
+                    "border:1px solid #2d3561;border-radius:4px;padding:4px;";
+
+  html += "<tr><td>SQM Offset (mag/arcsec\u00B2)</td>"
+          "<td><input type='number' name='sqmOffset' step='0.01' value='" +
+          String(deviceConfig.sqmOffset, 2) +
+          "' style='" + inpStyle + "'></td>"
+          "<td>Additive correction applied to the calculated SQM value</td></tr>\n";
+
+  html += "<tr><td>Cloud-Clear Delta (\u00B0C)</td>"
+          "<td><input type='number' name='cloudClear' step='0.5' value='" +
+          String(deviceConfig.cloudClearDelta, 1) +
+          "' style='" + inpStyle + "'></td>"
+          "<td>Ambient \u2212 Sky \u2265 this \u2192 0\u202F% cloud cover (clear)</td></tr>\n";
+
+  html += "<tr><td>Cloud-Overcast Delta (\u00B0C)</td>"
+          "<td><input type='number' name='cloudOvercast' step='0.5' value='" +
+          String(deviceConfig.cloudOvercastDelta, 1) +
+          "' style='" + inpStyle + "'></td>"
+          "<td>Ambient \u2212 Sky \u2264 this \u2192 100\u202F% cloud cover (overcast)</td></tr>\n";
+
+  html += "</table>\n";
+  html += "<br><input type='submit' value='Save Configuration' class='btn' style='background:#0f3460'>\n";
+  html += "</form>\n";
   html += "</div>\n";
 
   // WiFi reset
@@ -379,6 +435,8 @@ inline String getTrendsPage()
   // Chart canvases
   html += "<div class='card'><h2>Temperature (\u00B0C)</h2>"
           "<canvas id='cT' height='210' style='width:100%;display:block'></canvas></div>\n";
+  html += "<div class='card'><h2>Cloud Cover (%)</h2>"
+          "<canvas id='cC' height='170' style='width:100%;display:block'></canvas></div>\n";
   html += "<div class='card'><h2>Sky Brightness (lux)</h2>"
           "<canvas id='cL' height='170' style='width:100%;display:block'></canvas></div>\n";
   html += "<div class='card'><h2>Sky Quality (mag/arcsec\u00B2)</h2>"
@@ -421,6 +479,10 @@ function renderAll(d) {
     { label:'Median',  color:'#55efc4', data:d.med,  lo:d.med_lo,  hi:d.med_hi  },
     { label:'Ambient', color:'#ffeaa7', data:d.amb,  lo:d.amb_lo,  hi:d.amb_hi  }
   ], d.t, d.now, '°C');
+
+  drawChart('cC', [
+    { label:'Cloud Cover', color:'#dfe6e9', data:d.cloud, lo:d.cloud_lo, hi:d.cloud_hi }
+  ], d.t, d.now, '%');
 
   drawChart('cL', [
     { label:'Lux', color:'#fdcb6e', data:d.lux, lo:d.lux_lo, hi:d.lux_hi }

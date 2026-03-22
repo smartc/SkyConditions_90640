@@ -25,6 +25,7 @@
 #include "web_ui_handler.h"
 #include "alpaca.h"
 #include "history.h"
+#include "config_store.h"
 
 #include <Wire.h>
 #include <Adafruit_MLX90640.h>
@@ -123,6 +124,11 @@ void setup()
   // ── OTA firmware updates ──────────────────────────────────────────────────
   ElegantOTA.begin(&webUiServer);
 
+  // ── Persistent config (calibration, thresholds) ──────────────────────────
+  configLoad(deviceConfig);
+  Debug.printf("Config: sqmOffset=%.2f  cloudClear=%.1f  cloudOvercast=%.1f\n",
+    deviceConfig.sqmOffset, deviceConfig.cloudClearDelta, deviceConfig.cloudOvercastDelta);
+
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
 
@@ -190,7 +196,8 @@ void readSensor()
     skyConditions.getMinTemperature(),
     skyConditions.getMaxTemperature(),
     skyConditions.getMedianTemperature(),
-    skyConditions.getAmbientTemperature());
+    skyConditions.getAmbientTemperature(),
+    skyConditions.getCloudCover());
 
   broadcastThermalFrame();
 

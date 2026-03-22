@@ -41,6 +41,11 @@
 // Preferences Namespace
 #define PREFERENCES_NAMESPACE "skyCond"
 
+// Thermal JPEG snapshot scale factor (applied before JPEG encoding).
+// scaledBuf is placed in PSRAM (EXT_RAM_BSS_ATTR) so internal heap is unaffected.
+// 10 → 320×240 px (~230 KB staging in PSRAM).  Requires PSRAM enabled in board settings.
+#define THERMAL_JPEG_SCALE  10
+
 // WebSocket binary frame layout (sent to browser)
 // Bytes  0-3:  float32 min temperature (full frame)
 // Bytes  4-7:  float32 max temperature (full frame)

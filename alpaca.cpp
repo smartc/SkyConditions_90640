@@ -4,7 +4,7 @@
  * ASCOM Alpaca ObservingConditions HTTP server (port 11111) and UDP discovery.
  * Uses Arduino WebServer – all handlers run on the main loop; no locking needed.
  *
- * Implemented sensors:  SkyTemperature, Temperature
+ * Implemented sensors:  SkyTemperature, Temperature, SkyBrightness, SkyQuality, CloudCover
  * All other ObservingConditions sensors return PropertyNotImplementedException (1035).
  */
 
@@ -243,6 +243,12 @@ static void handleGetTemperature()
   sendDouble(skyConditions.getAmbientTemperature());
 }
 
+static void handleGetCloudCover()
+{
+  if (!skyConditions.hasData()) { sendValueNotSet(); return; }
+  sendDouble(skyConditions.getCloudCover());
+}
+
 static void handleGetSkyBrightness()
 {
   if (!skyConditions.hasBrightnessData()) { sendValueNotSet(); return; }
@@ -259,7 +265,7 @@ static void handleGetTimeSinceLastUpdate()
 {
   String sensor = alpacaServer.arg("SensorName");
   sensor.toLowerCase();
-  if (sensor == "skytemperature" || sensor == "temperature") {
+  if (sensor == "skytemperature" || sensor == "temperature" || sensor == "cloudcover") {
     if (!skyConditions.hasData()) { sendValueNotSet(); return; }
     sendDouble((millis() - skyConditions.getLastUpdateMillis()) / 1000.0);
   } else if (sensor == "skybrightness" || sensor == "skyquality") {
@@ -283,6 +289,8 @@ static void handleGetSensorDescription()
     json["Value"] = "TSL2591 broadband visible+IR illuminance in lux";
   } else if (sensor == "skyquality") {
     json["Value"] = "Sky quality in mag/arcsec^2 derived from TSL2591 lux reading";
+  } else if (sensor == "cloudcover") {
+    json["Value"] = "Cloud cover % estimated from ambient-sky temperature deficit (MLX90640)";
   } else {
     json["ErrorNumber"]  = 1035;
     json["ErrorMessage"] = "Sensor not implemented";
@@ -360,7 +368,7 @@ static void registerRoutes()
   alpacaServer.on((base + "/skyquality").c_str(),    HTTP_GET, handleGetSkyQuality);
 
   // ObservingConditions – not implemented sensors
-  alpacaServer.on((base + "/cloudcover").c_str(),    HTTP_GET, sendNotImplemented);
+  alpacaServer.on((base + "/cloudcover").c_str(),    HTTP_GET, handleGetCloudCover);
   alpacaServer.on((base + "/dewpoint").c_str(),      HTTP_GET, sendNotImplemented);
   alpacaServer.on((base + "/humidity").c_str(),      HTTP_GET, sendNotImplemented);
   alpacaServer.on((base + "/pressure").c_str(),      HTTP_GET, sendNotImplemented);

@@ -47,6 +47,9 @@ public:
   bool  hasBrightnessData()        const { return _hasBrightnessData; }
   unsigned long getLastBrightnessMillis() const { return _lastBrightnessMillis; }
 
+  // Cloud cover (0–100 %).  Valid whenever hasData() is true.
+  float getCloudCover() const { return _cloudCover; }
+
   // ASCOM device state (read/written by alpaca.cpp handlers).
   bool   getConnected()      const { return _connected; }
   void   setConnected(bool v)      { _connected = v; }
@@ -79,6 +82,9 @@ private:
   float         _sqm;
   bool          _hasBrightnessData;
   unsigned long _lastBrightnessMillis;
+
+  // Cloud cover derived from thermal delta.
+  float         _cloudCover;
 
   // ASCOM device state.
   double        _averagePeriod;
