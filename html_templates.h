@@ -234,7 +234,7 @@ function connect() {
           cre = )rawjs" + String(CENTER_ROW_END + 1) + R"rawjs(;
     const scaleX = canvas.width  / COLS;
     const scaleY = canvas.height / ROWS;
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.strokeStyle = 'rgba(255,60,60,0.85)';
     ctx.lineWidth   = 2;
     ctx.strokeRect(ccs*scaleX, crs*scaleY,
                    (cce-ccs)*scaleX, (cre-crs)*scaleY);
@@ -507,7 +507,20 @@ function updateEdge() {
   html += "    .then(() => alert('Resetting. Connect to WiFi AP: SkyCond-Setup'))\n";
   html += "    .catch(() => alert('Request sent'));\n";
   html += "}\n";
+  html += "function rebootDevice() {\n";
+  html += "  if (!confirm('Reboot the device?')) return;\n";
+  html += "  fetch('/reboot', { method:'POST' })\n";
+  html += "    .then(() => alert('Rebooting. Page will reload in 10 seconds.'))\n";
+  html += "    .catch(() => alert('Request sent'));\n";
+  html += "  setTimeout(() => location.reload(), 10000);\n";
+  html += "}\n";
   html += "</script>\n";
+  html += "</div>\n";
+
+  // Reboot
+  html += "<div class='card'>\n";
+  html += "<h2>Device</h2>\n";
+  html += "<button class='btn btn-danger' onclick='rebootDevice()'>Reboot Device</button>\n";
   html += "</div>\n";
 
   html += "</body></html>";

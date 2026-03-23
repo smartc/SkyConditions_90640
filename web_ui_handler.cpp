@@ -152,6 +152,14 @@ static void handleResetWifi()
   ESP.restart();
 }
 
+static void handleReboot()
+{
+  webUiServer.send(200, "text/plain", "Rebooting...");
+  Debug.println("Reboot requested via web UI");
+  delay(500);
+  ESP.restart();
+}
+
 static void handleTrends()
 {
   webUiServer.send(200, "text/html", getTrendsPage());
@@ -271,6 +279,7 @@ void initWebUI()
   webUiServer.on("/thermal.jpg",    HTTP_GET,  handleThermalJpeg);
   webUiServer.on("/thermalmatrix",  HTTP_GET,  handleThermalMatrix);
   webUiServer.on("/reset_wifi",   HTTP_POST, handleResetWifi);
+  webUiServer.on("/reboot",       HTTP_POST, handleReboot);
   webUiServer.on("/save_config",  HTTP_POST, handleSaveConfig);
   webUiServer.onNotFound(handleNotFound);
   webUiServer.begin();
