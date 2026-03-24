@@ -27,6 +27,7 @@ No CLI build system — use Arduino IDE or `arduino-cli`.
 | arduinoWebSockets (Markus Sattler) | Library Manager |
 | ElegantOTA | Library Manager |
 | ArduinoJson | Library Manager |
+| PubSubClient | **Bundled** (`PubSubClient.h/.cpp` in project root – no Library Manager install needed) |
 
 The ASCOM Alpaca protocol is implemented directly using the Arduino `WebServer` and `WiFiUDP` classes — no external Alpaca framework library is used.
 
@@ -45,6 +46,8 @@ The ASCOM Alpaca protocol is implemented directly using the Arduino `WebServer` 
 | `web_ui_handler.h/.cpp` | Arduino `WebServer` (port 80) + `WebSocketsServer` (port 81) |
 | `html_templates.h` | Inline HTML/CSS/JS generators for home, trends, and setup pages |
 | `history.h/.cpp` | Dual-resolution history ring buffers (30 s / 15 min buckets) |
+| `mqtt_handler.h/.cpp` | MQTT client + Home Assistant autodiscovery (PubSubClient) |
+| `PubSubClient.h/.cpp` | Bundled MQTT client library (copied from ror_controller) |
 
 ### Communication Stack
 
@@ -135,10 +138,52 @@ All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (
 | `averagePeriod` | `avgPeriod` | 0.5 s |
 | `location` | `location` | "Observatory" |
 | `ntpServer` | `ntpServer` | "" (use pool.ntp.org / time.nist.gov) |
+| `mqttEnabled` | `mqttEn` | false |
+| `mqttServer` | `mqttServer` | "" |
+| `mqttPort` | `mqttPort` | 1883 |
+| `mqttUser` | `mqttUser` | "" |
+| `mqttPassword` | `mqttPass` | "" |
+| `mqttTopicPrefix` | `mqttTopicPfx` | "skyconditions" (+ MAC suffix if unchanged) |
 
 ### NTP
 
 `configTime(0, 0, ...)` is called after WiFi connects.  If `deviceConfig.ntpServer` is non-empty it is used as the preferred server (first argument); `pool.ntp.org` and `time.nist.gov` are always passed as fallbacks.  Configurable via the Setup page → Network section.
+
+### MQTT / Home Assistant Autodiscovery
+
+Implemented in `mqtt_handler.h/.cpp` using the bundled PubSubClient library.
+
+**State topic:** `<prefix>/state` — JSON payload published every `MQTT_PUBLISH_INTERVAL` (30 s) and on reconnect.
+
+```json
+{
+  "sky_temp": -12.5,    "ambient_temp": 18.2,
+  "frame_min": -18.0,   "frame_max": 25.0,   "frame_median": 4.3,
+  "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
+  "lux": 0.0023,        "sqm": 21.5,
+  "has_data": true,     "has_brightness": true,
+  "ip": "192.168.x.x",  "version": "0.3.1"
+}
+```
+
+**Image topic:** `<prefix>/thumbnail` — retained binary JPEG (the same image served at `/thermal.jpg`), published alongside state.
+
+**Availability topic:** `<prefix>/availability` — LWT publishes `"offline"`, normal connect publishes `"online"` (retained).
+
+**Publish rate:** state + thumbnail published together, at most once every 30 s (`MQTT_PUBLISH_INTERVAL`).  Also published once on (re)connect.
+
+**HA discovery entities** (published with retain):
+- `sky_temperature` — °C, device_class temperature
+- `ambient_temperature` — °C, device_class temperature
+- `cloud_cover` / `cloud_cover_mean` / `cloud_cover_pixel` — %
+- `sky_brightness` — lx, device_class illuminance
+- `sky_quality` — mag/arcsec²
+- `frame_min_temp` / `frame_max_temp` / `frame_median_temp` — °C
+- `sky_thermal_image` — `image` entity, `image/jpeg`, points to thumbnail topic
+
+**Topic prefix default:** `skyconditions` auto-appended with the lowercase MAC hex to avoid broker collisions.  Set a custom prefix in Setup → MQTT to override.
+
+**No inbound command topic** — this is a read-only sensor device.
 
 ## WiFi
 

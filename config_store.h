@@ -31,6 +31,14 @@ struct DeviceConfig {
   // Network
   char     ntpServer[64];        // Preferred NTP server (blank = use defaults only)
 
+  // MQTT / Home Assistant
+  bool     mqttEnabled;
+  char     mqttServer[MQTT_SERVER_SIZE];
+  uint16_t mqttPort;
+  char     mqttUser[MQTT_USER_SIZE];
+  char     mqttPassword[MQTT_PASSWORD_SIZE];
+  char     mqttTopicPrefix[MQTT_TOPIC_SIZE];
+
   // Cloud cover
   uint8_t  cloudCoverMethod;     // 0 = mean (center FOV avg), 1 = per-pixel
   uint8_t  cloudPixelRegion;     // 0 = center FOV, 1 = full frame (per-pixel only)

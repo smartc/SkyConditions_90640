@@ -26,6 +26,8 @@
 #include "alpaca.h"
 #include "history.h"
 #include "config_store.h"
+#include "mqtt_handler.h"
+#include "rain_sensor.h"
 
 #include <Wire.h>
 #include <Adafruit_MLX90640.h>
@@ -138,6 +140,12 @@ void setup()
   // ── OTA firmware updates ──────────────────────────────────────────────────
   ElegantOTA.begin(&webUiServer);
 
+  // ── MQTT / Home Assistant autodiscovery ───────────────────────────────────
+  setupMQTT();
+
+  // ── Rain / snow sensor (relay + RS485 Modbus) ────────────────────────────
+  rainSensorSetup();
+
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
 
@@ -166,6 +174,12 @@ void loop()
 
   // Service OTA.
   ElegantOTA.loop();
+
+  // Service MQTT.
+  mqttLoop();
+
+  // Rain / snow sensor – relay read + periodic Modbus poll.
+  rainSensorLoop();
 
   // Honour an ASCOM PUT /refresh request from a connected client.
   if (skyConditions.isRefreshRequested()) {

@@ -6,6 +6,7 @@
 #include "config.h"
 #include "sky_sensor.h"
 #include "config_store.h"
+#include "rain_sensor.h"
 
 // ---------------------------------------------------------------------------
 // Shared CSS
@@ -131,6 +132,20 @@ inline String getHomePage()
           "    <div class='stat-value' style='color:#00cec9'>" +
           (skyConditions.hasBrightnessData() ? String(skyConditions.getSqm(), 2) + " mag/\"²" : "--") +
           "</div></div>\n";
+  {
+    bool wet      = rainIsWet();
+    bool relayWet = rainData.relayWet;
+    bool mbOk     = rainData.modbusOk;
+    bool mbWet    = rainData.modbusWet;
+    String mainColor  = wet ? "#74b9ff" : "#00b894";
+    String mainLabel  = wet ? "WET"     : "DRY";
+    String relayTxt   = relayWet                   ? "Relay: WET"   : "Relay: DRY";
+    String modbusTxt  = mbOk ? (mbWet ? "RS485: WET" : "RS485: DRY") : "RS485: --";
+    html += "  <div class='stat-box'><div class='stat-label'>Rain / Snow</div>"
+            "    <div class='stat-value' style='color:" + mainColor + "'>" + mainLabel + "</div>"
+            "    <div style='font-size:0.65em;color:#b2bec3;margin-top:4px'>" +
+            relayTxt + " &bull; " + modbusTxt + "</div></div>\n";
+  }
   html += "</div>\n";  // stat-grid
   html += "</div>\n";  // card
 
@@ -488,6 +503,42 @@ function updateEdge() {
           String(deviceConfig.ntpServer) + "' style='" + inpStyle + "width:180px;' placeholder='e.g. 192.168.1.1'></td>"
           "<td>Preferred NTP server (blank = use pool.ntp.org / time.nist.gov). "
           "Takes effect after reboot.</td></tr>\n";
+
+  // ── MQTT / Home Assistant ──────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>MQTT / Home Assistant"
+          " <span style='font-weight:normal;font-size:0.8em;color:#74b9ff'>"
+          "(takes effect after reboot)</span></th></tr>\n";
+
+  html += "<tr><td>Enable MQTT</td>"
+          "<td><input type='checkbox' name='mqttEnabled' value='1'" +
+          String(deviceConfig.mqttEnabled ? " checked" : "") + "></td>"
+          "<td>Publish sensor data and Home Assistant autodiscovery</td></tr>\n";
+
+  html += "<tr><td>Broker Address</td>"
+          "<td><input type='text' name='mqttServer' maxlength='63' value='" +
+          String(deviceConfig.mqttServer) + "' style='" + inpStyle + "width:180px;' placeholder='192.168.1.x'></td>"
+          "<td>MQTT broker hostname or IP</td></tr>\n";
+
+  html += "<tr><td>Broker Port</td>"
+          "<td><input type='number' name='mqttPort' min='1' max='65535' value='" +
+          String(deviceConfig.mqttPort) + "' style='" + inpStyle + "width:80px;'></td>"
+          "<td>Default: 1883</td></tr>\n";
+
+  html += "<tr><td>Username</td>"
+          "<td><input type='text' name='mqttUser' maxlength='31' value='" +
+          String(deviceConfig.mqttUser) + "' style='" + inpStyle + "width:160px;' placeholder='(optional)'></td>"
+          "<td>Leave blank if broker requires no auth</td></tr>\n";
+
+  html += "<tr><td>Password</td>"
+          "<td><input type='password' name='mqttPass' maxlength='63' value='" +
+          String(deviceConfig.mqttPassword) + "' style='" + inpStyle + "width:160px;' placeholder='(optional)'></td>"
+          "<td></td></tr>\n";
+
+  html += "<tr><td>Topic Prefix</td>"
+          "<td><input type='text' name='mqttTopicPfx' maxlength='63' value='" +
+          String(deviceConfig.mqttTopicPrefix) + "' style='" + inpStyle + "width:200px;'></td>"
+          "<td>Default '<code>skyconditions</code>' auto-appends MAC suffix. "
+          "State topic: <code>&lt;prefix&gt;/state</code></td></tr>\n";
 
   html += "</table>\n";
   html += "<br><input type='submit' value='Save Configuration' class='btn' style='background:#0f3460'>\n";

@@ -22,4 +22,8 @@ void handleWebUI();
 void broadcastThermalFrame();
 void updateThermalSnapshot();   // regenerate cached /thermal.jpg
 
+// Returns pointer to the current cached thermal JPEG and its size.
+// Returns false if no snapshot is available yet.
+bool getThermalJpeg(const uint8_t **buf, size_t *len);
+
 #endif // WEB_UI_HANDLER_H

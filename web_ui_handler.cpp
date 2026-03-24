@@ -10,6 +10,7 @@
 #include "html_templates.h"
 #include "config_store.h"
 #include "history.h"
+#include "mqtt_handler.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <img_converters.h>
@@ -208,6 +209,34 @@ static void handleSaveConfig()
     deviceConfig.cloudPixelRegion = (uint8_t)(webUiServer.arg("cloudPxRgn").toInt() != 0 ? 1 : 0);
   if (webUiServer.hasArg("cloudEdge"))
     deviceConfig.cloudEdgeExclude = (uint8_t)constrain(webUiServer.arg("cloudEdge").toInt(), 0, 10);
+
+  // MQTT
+  deviceConfig.mqttEnabled = webUiServer.hasArg("mqttEnabled");
+  if (webUiServer.hasArg("mqttServer")) {
+    String s = webUiServer.arg("mqttServer"); s.trim();
+    strncpy(deviceConfig.mqttServer, s.c_str(), sizeof(deviceConfig.mqttServer) - 1);
+    deviceConfig.mqttServer[sizeof(deviceConfig.mqttServer) - 1] = '\0';
+  }
+  if (webUiServer.hasArg("mqttPort"))
+    deviceConfig.mqttPort = (uint16_t)constrain(webUiServer.arg("mqttPort").toInt(), 1, 65535);
+  if (webUiServer.hasArg("mqttUser")) {
+    String s = webUiServer.arg("mqttUser"); s.trim();
+    strncpy(deviceConfig.mqttUser, s.c_str(), sizeof(deviceConfig.mqttUser) - 1);
+    deviceConfig.mqttUser[sizeof(deviceConfig.mqttUser) - 1] = '\0';
+  }
+  if (webUiServer.hasArg("mqttPass")) {
+    String s = webUiServer.arg("mqttPass");
+    strncpy(deviceConfig.mqttPassword, s.c_str(), sizeof(deviceConfig.mqttPassword) - 1);
+    deviceConfig.mqttPassword[sizeof(deviceConfig.mqttPassword) - 1] = '\0';
+  }
+  if (webUiServer.hasArg("mqttTopicPfx")) {
+    String s = webUiServer.arg("mqttTopicPfx"); s.trim();
+    if (s.length() > 0) {
+      strncpy(deviceConfig.mqttTopicPrefix, s.c_str(), sizeof(deviceConfig.mqttTopicPrefix) - 1);
+      deviceConfig.mqttTopicPrefix[sizeof(deviceConfig.mqttTopicPrefix) - 1] = '\0';
+    }
+  }
+
   configSave(deviceConfig);
   Debug.println("Config saved via web UI");
   webUiServer.sendHeader("Location", "/setup");
@@ -247,6 +276,14 @@ static void handleThermalMatrix()
     webUiServer.sendContent("]");
   }
   webUiServer.sendContent("]}");
+}
+
+bool getThermalJpeg(const uint8_t **buf, size_t *len)
+{
+  if (jpegOutLen == 0) return false;
+  *buf = jpegOutBuf;
+  *len = jpegOutLen;
+  return true;
 }
 
 static void handleNotFound()
