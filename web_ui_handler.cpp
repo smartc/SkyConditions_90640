@@ -11,6 +11,7 @@
 #include "config_store.h"
 #include "history.h"
 #include "mqtt_handler.h"
+#include "rain_sensor.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <img_converters.h>
@@ -237,6 +238,10 @@ static void handleSaveConfig()
     }
   }
 
+  // Rain sensor
+  if (webUiServer.hasArg("rainMode"))
+    deviceConfig.rainMode = (uint8_t)(webUiServer.arg("rainMode").toInt() != 0 ? 1 : 0);
+
   configSave(deviceConfig);
   Debug.println("Config saved via web UI");
   webUiServer.sendHeader("Location", "/setup");
@@ -335,6 +340,14 @@ void handleWebUI()
   if (millis() - lastJpegUpdate >= (unsigned long)deviceConfig.snapshotIntervalSec * 1000UL) {
     updateThermalSnapshot();
   }
+}
+
+// Called from rainSensorLoop() whenever the relay state changes (relay mode only).
+void broadcastRainState()
+{
+  if (wsServer.connectedClients() == 0) return;
+  String msg = String("{\"rain\":\"") + (rainIsWet() ? "WET" : "DRY") + "\"}";
+  wsServer.broadcastTXT(msg);
 }
 
 // Called from the main loop after every new sensor frame.

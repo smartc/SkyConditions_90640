@@ -43,6 +43,9 @@ struct DeviceConfig {
   uint8_t  cloudCoverMethod;     // 0 = mean (center FOV avg), 1 = per-pixel
   uint8_t  cloudPixelRegion;     // 0 = center FOV, 1 = full frame (per-pixel only)
   uint8_t  cloudEdgeExclude;     // pixels to ignore on each edge when using full frame
+
+  // Rain sensor
+  uint8_t  rainMode;             // 0 = Relay (IO38), 1 = RS485 Modbus
 };
 
 // Load settings from NVS; fills in defaults if keys are absent.

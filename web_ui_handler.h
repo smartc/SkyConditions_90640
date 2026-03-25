@@ -20,6 +20,7 @@ extern WebSocketsServer wsServer;
 void initWebUI();
 void handleWebUI();
 void broadcastThermalFrame();
+void broadcastRainState();      // push relay wet/dry to all WebSocket clients
 void updateThermalSnapshot();   // regenerate cached /thermal.jpg
 
 // Returns pointer to the current cached thermal JPEG and its size.

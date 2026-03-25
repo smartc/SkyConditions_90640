@@ -5,7 +5,9 @@
 
 #include "rain_sensor.h"
 #include "config.h"
+#include "config_store.h"
 #include "debug.h"
+#include "web_ui_handler.h"
 
 RainData rainData = {};
 
@@ -183,59 +185,63 @@ static void registerScan()
 
 void rainSensorSetup()
 {
-    // Relay input – internal pull-up; the relay contact shorts IO38 to GND when wet
+    // Relay input is always initialised (negligible cost, and mode can change in config).
     pinMode(RAIN_RELAY_PIN, INPUT_PULLUP);
     Debug.printf("[Rain] Relay on IO%d (INPUT_PULLUP; LOW=wet)\n", RAIN_RELAY_PIN);
 
-    // RS485 direction control – start in receive mode (RE# low, DE low)
-    pinMode(RAIN_RS485_DE_PIN, OUTPUT);
-    digitalWrite(RAIN_RS485_DE_PIN, LOW);
+    if (deviceConfig.rainMode == 1) {
+        // RS485 direction control – start in receive mode (RE# low, DE low)
+        pinMode(RAIN_RS485_DE_PIN, OUTPUT);
+        digitalWrite(RAIN_RS485_DE_PIN, LOW);
 
-    // UART2: IO41=RX (MAX3485ED RO), IO40=TX (MAX3485ED DI)
-    rs485.begin(RAIN_BAUD_RATE, SERIAL_8N1, RAIN_RS485_RX_PIN, RAIN_RS485_TX_PIN);
-    Debug.printf("[Rain] RS485 UART2  %d 8N1  RX=IO%d  TX=IO%d  DE/RE=IO%d\n",
-        RAIN_BAUD_RATE, RAIN_RS485_RX_PIN, RAIN_RS485_TX_PIN, RAIN_RS485_DE_PIN);
+        // UART2: IO41=RX (MAX3485ED RO), IO40=TX (MAX3485ED DI)
+        rs485.begin(RAIN_BAUD_RATE, SERIAL_8N1, RAIN_RS485_RX_PIN, RAIN_RS485_TX_PIN);
+        Debug.printf("[Rain] RS485 UART2  %d 8N1  RX=IO%d  TX=IO%d  DE/RE=IO%d\n",
+            RAIN_BAUD_RATE, RAIN_RS485_RX_PIN, RAIN_RS485_TX_PIN, RAIN_RS485_DE_PIN);
 
-    // Allow sensor time to stabilise after power-on before the first query
-    delay(500);
-
-    // Scan for working baud rate, then dump registers if one is found
-    uint32_t workingBaud = baudScan();
-    if (workingBaud > 0) {
-        // baudScan() left the UART at the working rate; do the register map dump
-        registerScan();
+        delay(500);
+        uint32_t workingBaud = baudScan();
+        if (workingBaud > 0) registerScan();
+    } else {
+        Debug.println("[Rain] Mode: Relay only – RS485 disabled");
     }
 }
 
 void rainSensorLoop()
 {
-    // --- Relay (polled every iteration; negligible cost) ---
-    bool prevRelay = rainData.relayWet;
-    rainData.relayWet = (digitalRead(RAIN_RELAY_PIN) == LOW);
-    if (rainData.relayWet != prevRelay)
-        Debug.printf("[Rain] Relay changed: %s\n", rainData.relayWet ? "WET" : "DRY");
-
-    // --- Modbus poll on interval ---
-    static unsigned long lastPoll = 0;
-    if (millis() - lastPoll < RAIN_POLL_MS) return;
-    lastPoll = millis();
-
-    uint16_t val = 0;
-    if (modbusRead(RAIN_MODBUS_ADDR, 0x0000, &val)) {
-        bool wet = (val != 0);
-        if (wet != rainData.modbusWet || !rainData.modbusOk)
-            Debug.printf("[Rain] Modbus reg[0x0000]=%u → %s\n", val, wet ? "WET" : "DRY");
-        rainData.modbusWet    = wet;
-        rainData.modbusOk     = true;
-        rainData.lastModbusMs = millis();
+    if (deviceConfig.rainMode == 0) {
+        // --- Relay mode ---
+        bool prevRelay = rainData.relayWet;
+        rainData.relayWet = (digitalRead(RAIN_RELAY_PIN) == LOW);
+        if (rainData.relayWet != prevRelay) {
+            Debug.printf("[Rain] Relay changed: %s\n", rainData.relayWet ? "WET" : "DRY");
+            broadcastRainState();
+        }
     } else {
-        if (rainData.modbusOk)
-            Debug.println("[Rain] Modbus: lost communication");
-        rainData.modbusOk = false;
+        // --- RS485 Modbus mode – polled on interval ---
+        static unsigned long lastPoll = 0;
+        if (millis() - lastPoll < RAIN_POLL_MS) return;
+        lastPoll = millis();
+
+        uint16_t val = 0;
+        if (modbusRead(RAIN_MODBUS_ADDR, 0x0000, &val)) {
+            bool wet = (val != 0);
+            if (wet != rainData.modbusWet || !rainData.modbusOk)
+                Debug.printf("[Rain] Modbus reg[0x0000]=%u → %s\n", val, wet ? "WET" : "DRY");
+            rainData.modbusWet    = wet;
+            rainData.modbusOk     = true;
+            rainData.lastModbusMs = millis();
+        } else {
+            if (rainData.modbusOk)
+                Debug.println("[Rain] Modbus: lost communication");
+            rainData.modbusOk = false;
+        }
     }
 }
 
 bool rainIsWet()
 {
-    return rainData.relayWet || (rainData.modbusOk && rainData.modbusWet);
+    if (deviceConfig.rainMode == 0)
+        return rainData.relayWet;
+    return rainData.modbusOk && rainData.modbusWet;
 }

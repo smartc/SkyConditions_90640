@@ -133,18 +133,24 @@ inline String getHomePage()
           (skyConditions.hasBrightnessData() ? String(skyConditions.getSqm(), 2) + " mag/\"²" : "--") +
           "</div></div>\n";
   {
-    bool wet      = rainIsWet();
-    bool relayWet = rainData.relayWet;
-    bool mbOk     = rainData.modbusOk;
-    bool mbWet    = rainData.modbusWet;
-    String mainColor  = wet ? "#74b9ff" : "#00b894";
-    String mainLabel  = wet ? "WET"     : "DRY";
-    String relayTxt   = relayWet                   ? "Relay: WET"   : "Relay: DRY";
-    String modbusTxt  = mbOk ? (mbWet ? "RS485: WET" : "RS485: DRY") : "RS485: --";
-    html += "  <div class='stat-box'><div class='stat-label'>Rain / Snow</div>"
-            "    <div class='stat-value' style='color:" + mainColor + "'>" + mainLabel + "</div>"
-            "    <div style='font-size:0.65em;color:#b2bec3;margin-top:4px'>" +
-            relayTxt + " &bull; " + modbusTxt + "</div></div>\n";
+    bool wet         = rainIsWet();
+    bool relayMode   = (deviceConfig.rainMode == 0);
+    String mainColor = wet ? "#74b9ff" : "#00b894";
+    String mainLabel = wet ? "WET"     : "DRY";
+    String subTxt;
+    if (relayMode) {
+      subTxt = rainData.relayWet ? "Relay: WET" : "Relay: DRY";
+    } else {
+      subTxt = rainData.modbusOk
+               ? (rainData.modbusWet ? "RS485: WET" : "RS485: DRY")
+               : "RS485: --";
+    }
+    // IDs are used by the WebSocket text-message handler for live relay updates.
+    html += "  <div class='stat-box'><div class='stat-label'>Rain / Snow<br>"
+            "<span style='font-size:0.8em;color:#8899aa'>" +
+            String(relayMode ? "Relay" : "RS485") + "</span></div>"
+            "    <div class='stat-value' id='rain-state' style='color:" + mainColor + "'>" + mainLabel + "</div>"
+            "    <div id='rain-sub' style='font-size:0.65em;color:#b2bec3;margin-top:4px'>" + subTxt + "</div></div>\n";
   }
   html += "</div>\n";  // stat-grid
   html += "</div>\n";  // card
@@ -217,6 +223,21 @@ function connect() {
   ws.onerror   = () => { ws.close(); };
 
   ws.onmessage = (evt) => {
+    // Text messages carry JSON status updates (e.g. relay rain state changes).
+    if (typeof evt.data === 'string') {
+      try {
+        const d = JSON.parse(evt.data);
+        if (d.rain !== undefined) {
+          const wet = d.rain === 'WET';
+          const el  = document.getElementById('rain-state');
+          const sub = document.getElementById('rain-sub');
+          if (el)  { el.textContent = d.rain; el.style.color = wet ? '#74b9ff' : '#00b894'; }
+          if (sub) sub.textContent = wet ? 'Relay: WET' : 'Relay: DRY';
+        }
+      } catch(e) {}
+      return;
+    }
+    // Binary messages are thermal frames.
     const buf  = evt.data;
     if (buf.byteLength < HEADER + PIXELS) return;
 
@@ -486,6 +507,20 @@ function updateEdge() {
 }
 </script>
 )rawsetup";
+
+  // ── Rain Sensor ───────────────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Rain Sensor"
+          " <span style='font-weight:normal;font-size:0.8em;color:#74b9ff'>"
+          "(takes effect after reboot)</span></th></tr>\n";
+  html += "<tr><td>Sensor Mode</td><td>";
+  html += "<select name='rainMode' style='" + inpStyle + "width:140px;'>";
+  html += "<option value='0'" + String(deviceConfig.rainMode == 0 ? " selected" : "") +
+          ">Relay (IO38)</option>";
+  html += "<option value='1'" + String(deviceConfig.rainMode == 1 ? " selected" : "") +
+          ">RS485 Modbus</option>";
+  html += "</select></td>"
+          "<td>Relay: reads IO38 (INPUT_PULLUP, LOW=wet). "
+          "RS485: polls ZTS-3000 via Modbus RTU on IO39\u201341.</td></tr>\n";
 
   // ── Identity ──────────────────────────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>Identity</th></tr>\n";
