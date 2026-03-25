@@ -342,6 +342,26 @@ void handleWebUI()
   }
 }
 
+// Called after each thermal or brightness read to push live values to the browser.
+void broadcastSensorState()
+{
+  if (wsServer.connectedClients() == 0) return;
+  if (!skyConditions.hasData()) return;
+
+  char buf[192];
+  snprintf(buf, sizeof(buf),
+    "{\"amb\":%.1f,\"cloud_mean\":%.1f,\"cloud_px\":%.1f"
+    ",\"lux\":%.6f,\"sqm\":%.2f"
+    ",\"has_data\":true,\"has_brightness\":%s}",
+    skyConditions.getAmbientTemperature(),
+    skyConditions.getCloudCoverMean(),
+    skyConditions.getCloudCoverPixel(),
+    skyConditions.getLux(),
+    skyConditions.getSqm(),
+    skyConditions.hasBrightnessData() ? "true" : "false");
+  wsServer.broadcastTXT(buf);
+}
+
 // Called from rainSensorLoop() whenever the relay state changes (relay mode only).
 void broadcastRainState()
 {

@@ -20,6 +20,7 @@ extern WebSocketsServer wsServer;
 void initWebUI();
 void handleWebUI();
 void broadcastThermalFrame();
+void broadcastSensorState();    // push ambient, cloud cover, lux, SQM as JSON text
 void broadcastRainState();      // push relay wet/dry to all WebSocket clients
 void updateThermalSnapshot();   // regenerate cached /thermal.jpg
 

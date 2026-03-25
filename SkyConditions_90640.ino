@@ -224,6 +224,7 @@ void readSensor()
     skyConditions.getCloudCoverPixel());
 
   broadcastThermalFrame();
+  broadcastSensorState();
 
   lastSensorRead = millis();
 
@@ -286,4 +287,5 @@ void readBrightness()
   }
 
   lastBrightnessRead = millis();
+  broadcastSensorState();
 }

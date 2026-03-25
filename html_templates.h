@@ -82,6 +82,17 @@ inline String getNavBar()
 }
 
 // ---------------------------------------------------------------------------
+// Adaptive lux formatter – 1 dp when >= 1 lux, more below that.
+// ---------------------------------------------------------------------------
+inline String fmtLux(float lux)
+{
+  if (lux >= 1.0f)    return String(lux, 1)  + " lux";
+  if (lux >= 0.1f)    return String(lux, 3)  + " lux";
+  if (lux >= 0.001f)  return String(lux, 4)  + " lux";
+  char buf[24]; snprintf(buf, sizeof(buf), "%.2e lux", lux); return String(buf);
+}
+
+// ---------------------------------------------------------------------------
 // Home page – live thermal view + reading cards
 // ---------------------------------------------------------------------------
 inline String getHomePage()
@@ -117,19 +128,19 @@ inline String getHomePage()
           (skyConditions.hasData() ? String(skyConditions.getAmbientTemperature(), 1) + "°C" : "--") +
           "</div></div>\n";
   html += "  <div class='stat-box'><div class='stat-label'>Cloud Cover<br><span style='font-size:0.8em;color:#74b9ff'>Mean</span></div>"
-          "    <div class='stat-value' style='color:#dfe6e9'>" +
+          "    <div class='stat-value' id='cloud-mean' style='color:#dfe6e9'>" +
           (skyConditions.hasData() ? String(skyConditions.getCloudCoverMean(), 0) + "%" : "--") +
           "</div></div>\n";
   html += "  <div class='stat-box'><div class='stat-label'>Cloud Cover<br><span style='font-size:0.8em;color:#74b9ff'>Per-Pixel</span></div>"
-          "    <div class='stat-value' style='color:#b2bec3'>" +
+          "    <div class='stat-value' id='cloud-px' style='color:#b2bec3'>" +
           (skyConditions.hasData() ? String(skyConditions.getCloudCoverPixel(), 0) + "%" : "--") +
           "</div></div>\n";
   html += "  <div class='stat-box'><div class='stat-label'>Sky Brightness</div>"
-          "    <div class='stat-value' style='color:#fdcb6e'>" +
-          (skyConditions.hasBrightnessData() ? String(skyConditions.getLux(), 4) + " lux" : "--") +
+          "    <div class='stat-value' id='lux-val' style='color:#fdcb6e'>" +
+          (skyConditions.hasBrightnessData() ? fmtLux(skyConditions.getLux()) : "--") +
           "</div></div>\n";
   html += "  <div class='stat-box'><div class='stat-label'>Sky Quality</div>"
-          "    <div class='stat-value' style='color:#00cec9'>" +
+          "    <div class='stat-value' id='sqm-val' style='color:#00cec9'>" +
           (skyConditions.hasBrightnessData() ? String(skyConditions.getSqm(), 2) + " mag/\"²" : "--") +
           "</div></div>\n";
   {
@@ -211,6 +222,13 @@ function cds(t) {
 const skyLT = new Array(256);
 for (let i = 0; i < 256; i++) { skyLT[i] = cds(i/255); }
 
+function fmtLux(lux) {
+  if (lux >= 1)     return lux.toFixed(1)       + ' lux';
+  if (lux >= 0.1)   return lux.toFixed(3)       + ' lux';
+  if (lux >= 0.001) return lux.toFixed(4)       + ' lux';
+  return lux.toExponential(2) + ' lux';
+}
+
 let ws, fpsCount = 0, lastFpsTime = Date.now(), fps = 0;
 
 function connect() {
@@ -223,16 +241,26 @@ function connect() {
   ws.onerror   = () => { ws.close(); };
 
   ws.onmessage = (evt) => {
-    // Text messages carry JSON status updates (e.g. relay rain state changes).
+    // Text messages carry JSON status updates.
     if (typeof evt.data === 'string') {
       try {
         const d = JSON.parse(evt.data);
+        // Rain state (relay mode live update)
         if (d.rain !== undefined) {
           const wet = d.rain === 'WET';
           const el  = document.getElementById('rain-state');
           const sub = document.getElementById('rain-sub');
           if (el)  { el.textContent = d.rain; el.style.color = wet ? '#74b9ff' : '#00b894'; }
           if (sub) sub.textContent = wet ? 'Relay: WET' : 'Relay: DRY';
+        }
+        // Sensor state (cloud cover, brightness, ambient)
+        if (d.amb !== undefined) {
+          const nd = d.has_data, nb = d.has_brightness;
+          document.getElementById('amb-temp').textContent   = nd ? d.amb.toFixed(1)        + '°C'        : '--';
+          document.getElementById('cloud-mean').textContent = nd ? d.cloud_mean.toFixed(0) + '%'         : '--';
+          document.getElementById('cloud-px').textContent   = nd ? d.cloud_px.toFixed(0)   + '%'         : '--';
+          document.getElementById('lux-val').textContent    = nb ? fmtLux(d.lux)                         : '--';
+          document.getElementById('sqm-val').textContent    = nb ? d.sqm.toFixed(2)        + ' mag/″²'   : '--';
         }
       } catch(e) {}
       return;
