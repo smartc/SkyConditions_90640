@@ -31,7 +31,7 @@
 // Device Information
 #define SERVER_NAME       "SkyConditions_90640"
 #define MANUFACTURER      "Corey Smart"
-#define MANUFACTURER_V    "0.4.0"
+#define MANUFACTURER_V    "0.4.1"
 #define LOCATION          "Observatory"
 #define DEVICE_NAME       "MLX90640 Sky Conditions Sensor"
 #define DESCRIPTION       "ESP32-S3 ASCOM Alpaca ObservingConditions device using MLX90640 thermal camera"
