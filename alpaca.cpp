@@ -736,6 +736,10 @@ static void registerRoutes()
   // Redirect setup/UI paths on the Alpaca port to the Web UI on port 80.
   alpacaServer.on("/",      HTTP_GET, redirectToRoot);
   alpacaServer.on("/setup", HTTP_GET, redirectToSetup);
+  // ASCOM Alpaca device setup URLs: /setup/v1/<type>/<n>/setup
+  alpacaServer.on("/setup/v1/observingconditions/0/setup", HTTP_GET, redirectToSetup);
+  alpacaServer.on("/setup/v1/safetymonitor/0/setup",       HTTP_GET, redirectToSetup);
+  alpacaServer.on("/setup/v1/switch/0/setup",              HTTP_GET, redirectToSetup);
 
   String base = "/api/v1/" + String(DEVICE_TYPE) + "/" + String(DEVICE_NUMBER);
 
