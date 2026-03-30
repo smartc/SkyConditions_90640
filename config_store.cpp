@@ -55,7 +55,8 @@ void configLoad(DeviceConfig &cfg)
   cfg.cloudEdgeExclude   = prefs.getUChar("cloudEdge",   2);
 
   // Rain sensor
-  cfg.rainMode           = prefs.getUChar("rainMode",    0);  // default: Relay
+  cfg.rainMode           = prefs.getUChar("rainMode",    0);     // default: Relay
+  cfg.rainEnabled        = prefs.getBool ("rainEn",      true);  // default: enabled
 
   prefs.end();
 }
@@ -85,6 +86,7 @@ void configSave(const DeviceConfig &cfg)
   prefs.putUChar ("cloudPxRgn",  cfg.cloudPixelRegion);
   prefs.putUChar ("cloudEdge",   cfg.cloudEdgeExclude);
   prefs.putUChar ("rainMode",    cfg.rainMode);
+  prefs.putBool  ("rainEn",      cfg.rainEnabled);
 
   prefs.end();
 }

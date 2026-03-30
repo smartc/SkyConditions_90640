@@ -1,10 +1,29 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// ── Board Selection ───────────────────────────────────────────────────────────
+// Uncomment the line matching your target board.
+// With ESP32S3 Dev Module:  SDA = GPIO8, SCL = GPIO9.
+// With XIAO ESP32-S3 Sense: external I2C pads are GPIO5 (SDA) / GPIO6 (SCL).
+//   Using D-number macros is unreliable across board definitions; numeric GPIOs are used.
+#define BOARD_XIAO_SENSE     // Seeed XIAO ESP32-S3 Sense
+// #define BOARD_ESP32S3_DEV // ESP32-S3 Dev Module (comment the line above first)
+
 // MLX90640 I2C Configuration
-#define THERMAL_SDA_PIN     8
-#define THERMAL_SCL_PIN     9
-#define THERMAL_I2C_FREQ    400000   // 400 kHz
+#if defined(BOARD_XIAO_SENSE)
+  #pragma message "Board: XIAO ESP32-S3 Sense (SDA=GPIO5, SCL=GPIO6)"
+  #define THERMAL_SDA_PIN   5    // GPIO5 = D4 pad on XIAO ESP32-S3 Sense
+  #define THERMAL_SCL_PIN   6    // GPIO6 = D5 pad on XIAO ESP32-S3 Sense
+#else
+  #pragma message "Board: ESP32-S3 Dev Module (SDA=GPIO8, SCL=GPIO9)"
+  #define THERMAL_SDA_PIN   8    // GPIO8 on ESP32-S3 Dev Module
+  #define THERMAL_SCL_PIN   9    // GPIO9 on ESP32-S3 Dev Module
+#endif
+#if defined(BOARD_XIAO_SENSE)
+  #define THERMAL_I2C_FREQ  100000   // 100 kHz – XIAO header has no external pull-ups
+#else
+  #define THERMAL_I2C_FREQ  400000   // 400 kHz
+#endif
 
 // MLX90640 Sensor Geometry
 #define SENSOR_COLS         32
@@ -20,8 +39,8 @@
 #define CENTER_PIXEL_COUNT  192      // 16 * 12
 
 // Sensor Refresh
-#define FRAME_INTERVAL_MS       500    // 500 ms = 2 Hz (MLX90640)
-#define BRIGHTNESS_INTERVAL_MS  1000   // 1 s   = 1 Hz  (TSL2591)
+#define FRAME_INTERVAL_MS       5000   // 5 s (MLX90640)
+#define BRIGHTNESS_INTERVAL_MS  5000   // 5 s (TSL2591)
 #define JPEG_INTERVAL_MS        30000  // 30 s  thermal JPEG snapshot
 
 // ASCOM Alpaca Configuration
@@ -39,7 +58,21 @@
 #define DEVICE_NUMBER     0
 
 // Rain / Snow Sensor (ZTS-3000-YUX-NO1RO1-H, MAX3485ED transceiver)
-#define RAIN_RELAY_PIN       38    // IO38: INPUT_PULLUP; LOW when wet (relay closes)
+//
+// Relay wiring varies by board:
+//   XIAO Grove Shield: relay bridged between D8 and D9.
+//     DRIVE pin (D8/GPIO7) → OUTPUT HIGH feeds one relay contact.
+//     SENSE pin (D9/GPIO8) → INPUT_PULLDOWN; reads HIGH when relay closes (wet).
+//   ESP32-S3 Dev: relay contact pulls IO38 to GND (original single-pin scheme).
+//     DRIVE pin not used (-1).
+//     SENSE pin (IO38) → INPUT_PULLUP; reads LOW when relay closes (wet).
+#if defined(BOARD_XIAO_SENSE)
+  #define RAIN_RELAY_DRIVE_PIN  7    // D8 = GPIO7: OUTPUT HIGH, drives relay contact
+  #define RAIN_RELAY_SENSE_PIN  8    // D9 = GPIO8: INPUT_PULLDOWN; HIGH = wet
+#else
+  #define RAIN_RELAY_DRIVE_PIN  (-1) // not used; relay return is GND
+  #define RAIN_RELAY_SENSE_PIN  38   // IO38: INPUT_PULLUP; LOW = wet
+#endif
 #define RAIN_RS485_DE_PIN    39    // IO39: MAX3485ED DE/RE# (HIGH=TX, LOW=RX)
 #define RAIN_RS485_TX_PIN    40    // IO40: MAX3485ED DI  (ESP32 → sensor)
 #define RAIN_RS485_RX_PIN    41    // IO41: MAX3485ED RO  (sensor → ESP32)

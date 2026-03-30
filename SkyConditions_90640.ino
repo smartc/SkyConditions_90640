@@ -19,8 +19,8 @@
  * Board: ESP32S3 Dev Module (or compatible)
  */
 
-#include "config.h"
 #include "debug.h"
+#include "config.h"
 #include "sky_sensor.h"
 #include "web_ui_handler.h"
 #include "alpaca.h"
@@ -69,33 +69,113 @@ void setup()
   delay(100);
   Debug.println("\nMLX90640 Sky Conditions Sensor – ASCOM Alpaca Driver v" MANUFACTURER_V);
 
-  // ── I2C + MLX90640 ────────────────────────────────────────────────────────
-  Wire.begin(THERMAL_SDA_PIN, THERMAL_SCL_PIN);
-  Wire.setClock(THERMAL_I2C_FREQ);
-
-  if (!mlx.begin(MLX90640_I2CADDR_DEFAULT, &Wire)) {
-    Debug.println("WARNING: MLX90640 not found – check wiring!");
-  } else {
-    mlx.setMode(MLX90640_CHESS);
-    mlx.setResolution(MLX90640_ADC_18BIT);
-    mlx.setRefreshRate(MLX90640_2_HZ);
-    sensorReady = true;
-    Debug.println("MLX90640 initialised (CHESS mode, 18-bit ADC, 2 Hz)");
-
-    // Prime the internal buffer – the first frame often contains stale data.
-    mlx.getFrame(thermalFrame);
+  // ── I2C bus recovery (bit-bang) ───────────────────────────────────────────
+  // If a previous boot crashed mid-transaction, a slave may be holding SDA low
+  // (bus lockup). Send 9 SCL pulses to clock out the stuck byte, then a STOP
+  // condition to release the bus, before handing control to Wire.
+  {
+    pinMode(THERMAL_SCL_PIN, OUTPUT);
+    pinMode(THERMAL_SDA_PIN, INPUT_PULLUP);   // let slave release SDA naturally
+    digitalWrite(THERMAL_SCL_PIN, HIGH);
+    for (int i = 0; i < 9; i++) {
+      digitalWrite(THERMAL_SCL_PIN, LOW);  delayMicroseconds(10);
+      digitalWrite(THERMAL_SCL_PIN, HIGH); delayMicroseconds(10);
+      if (digitalRead(THERMAL_SDA_PIN)) break;  // SDA released – bus is free
+    }
+    // Generate STOP: SDA LOW→HIGH while SCL is HIGH
+    pinMode(THERMAL_SDA_PIN, OUTPUT);
+    digitalWrite(THERMAL_SDA_PIN, LOW);  delayMicroseconds(10);
+    digitalWrite(THERMAL_SCL_PIN, HIGH); delayMicroseconds(10);
+    digitalWrite(THERMAL_SDA_PIN, HIGH); delayMicroseconds(10);
+    // Release both pins before Wire takes over
+    pinMode(THERMAL_SDA_PIN, INPUT);
+    pinMode(THERMAL_SCL_PIN, INPUT);
+    delay(10);
   }
 
-  // ── TSL2591 brightness sensor (same I2C bus) ───────────────────────────
-  if (!tsl.begin(&Wire)) {
-    Debug.println("WARNING: TSL2591 not found – check wiring!");
-  } else {
-    // MAX gain + 300 ms integration: optimised for night-sky measurements.
-    // calculateLux() returns -1 on overflow (bright daytime); handled in readBrightness().
-    tsl.setGain(TSL2591_GAIN_MAX);
-    tsl.setTiming(TSL2591_INTEGRATIONTIME_300MS);  // default; overridden by config on first read
-    brightnessReady = true;
-    Debug.println("TSL2591 initialised (MAX gain, 300 ms integration)");
+  // ── I2C + sensors ─────────────────────────────────────────────────────────
+  Wire.end();
+  Wire.setPins(THERMAL_SDA_PIN, THERMAL_SCL_PIN);
+  //Wire.begin(THERMAL_SDA_PIN, THERMAL_SCL_PIN);
+  Wire.begin();
+  Wire.setClock(THERMAL_I2C_FREQ);
+  delay(50);
+
+  // Multi-pair I2C pin scanner.
+  // Tries every candidate SDA/SCL pair and reports which one sees the sensors.
+  // Expected: MLX90640 = 0x33, TSL2591 = 0x29.
+  {
+    struct PinPair { int sda; int scl; const char *label; };
+    static const PinPair candidates[] = {
+      {  5,  6, "GPIO5/6  (XIAO D4/D5)" },
+      {  6,  5, "GPIO6/5  (XIAO D4/D5 reversed)" },
+      {  6,  7, "GPIO6/7  (XIAO D5/D6)" },
+      {  7,  6, "GPIO7/6  (XIAO D5/D6 reversed)" },
+      {  4,  5, "GPIO4/5  (XIAO D3/D4)" },
+      {  5,  4, "GPIO5/4  (XIAO D3/D4 reversed)" },
+      {  3,  4, "GPIO3/4  (XIAO D2/D3)" },
+      {  4,  3, "GPIO4/3  (XIAO D2/D3 reversed)" },
+      {  8,  9, "GPIO8/9  (ESP32-S3 Dev)" },
+      {  9,  8, "GPIO9/8  (ESP32-S3 Dev reversed)" },
+    };
+    // Stop as soon as we find the sensors – scanning wrong pairs after a hit
+    // drives the sensor's SCL/SDA lines as the opposite role, causing bus lockup.
+    Debug.println("--- I2C pin scan (looking for 0x29/0x33) ---");
+    bool pinsFound = false;
+    for (const auto &p : candidates) {
+      Wire.end();
+      Wire.begin(p.sda, p.scl);
+      Wire.setClock(100000);
+      delay(20);
+      Wire.beginTransmission(0x33); bool found33 = (Wire.endTransmission() == 0);
+      Wire.beginTransmission(0x29); bool found29 = (Wire.endTransmission() == 0);
+      if (found33 || found29) {
+        Debug.printf("  *** HIT on %s: %s %s – initialising libraries now\n", p.label,
+          found33 ? "MLX90640(0x33)" : "",
+          found29 ? "TSL2591(0x29)"  : "");
+        pinsFound = true;
+
+        // Init libraries immediately while Wire is live on the correct pins.
+        // TSL2591 first: its internal Wire.begin() reinit is survivable and
+        // helps settle the bus before the more sensitive MLX90640 init.
+        if (found29) {
+          if (!tsl.begin(&Wire)) {
+            Debug.println("WARNING: TSL2591 not found – check wiring!");
+          } else {
+            tsl.setGain(TSL2591_GAIN_MAX);
+            tsl.setTiming(TSL2591_INTEGRATIONTIME_300MS);
+            brightnessReady = true;
+            Debug.println("TSL2591 initialised (MAX gain, 300 ms integration)");
+          }
+        }
+        // MLX90640 after TSL2591 – retry a few times; the sensor may need a
+        // moment to recover after the library's internal Wire.begin() reinit.
+        if (found33) {
+          for (int attempt = 1; attempt <= 5 && !sensorReady; attempt++) {
+            if (attempt > 1) {
+              Debug.printf("MLX90640 init retry %d/5...\n", attempt);
+              delay(200);
+            }
+            if (mlx.begin(MLX90640_I2CADDR_DEFAULT, &Wire)) {
+              mlx.setMode(MLX90640_CHESS);
+              mlx.setResolution(MLX90640_ADC_18BIT);
+              mlx.setRefreshRate(MLX90640_2_HZ);
+              sensorReady = true;
+              Debug.printf("MLX90640 initialised on attempt %d\n", attempt);
+              mlx.getFrame(thermalFrame);
+            }
+          }
+          if (!sensorReady) Debug.println("WARNING: MLX90640 not found – check wiring!");
+        }
+        break;
+      } else {
+        Debug.printf("      miss: %s\n", p.label);
+      }
+    }
+    Debug.println("--- pin scan complete ---");
+    if (!pinsFound) {
+      Debug.println("WARNING: sensors not found on any pin pair");
+    }
   }
 
   // ── WiFi via WiFiManager ──────────────────────────────────────────────────
@@ -144,7 +224,7 @@ void setup()
   setupMQTT();
 
   // ── Rain / snow sensor (relay + RS485 Modbus) ────────────────────────────
-  rainSensorSetup();
+  if (deviceConfig.rainEnabled) rainSensorSetup();
 
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
@@ -179,7 +259,7 @@ void loop()
   mqttLoop();
 
   // Rain / snow sensor – relay read + periodic Modbus poll.
-  rainSensorLoop();
+  if (deviceConfig.rainEnabled) rainSensorLoop();
 
   // Honour an ASCOM PUT /refresh request from a connected client.
   if (skyConditions.isRefreshRequested()) {

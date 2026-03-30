@@ -239,6 +239,7 @@ static void handleSaveConfig()
   }
 
   // Rain sensor
+  deviceConfig.rainEnabled = webUiServer.hasArg("rainEnabled");
   if (webUiServer.hasArg("rainMode"))
     deviceConfig.rainMode = (uint8_t)(webUiServer.arg("rainMode").toInt() != 0 ? 1 : 0);
 

@@ -144,12 +144,15 @@ inline String getHomePage()
           (skyConditions.hasBrightnessData() ? String(skyConditions.getSqm(), 2) + " mag/\"²" : "--") +
           "</div></div>\n";
   {
+    bool enabled     = deviceConfig.rainEnabled;
     bool wet         = rainIsWet();
     bool relayMode   = (deviceConfig.rainMode == 0);
-    String mainColor = wet ? "#74b9ff" : "#00b894";
-    String mainLabel = wet ? "WET"     : "DRY";
+    String mainColor = !enabled ? "#636e72" : (wet ? "#74b9ff" : "#00b894");
+    String mainLabel = !enabled ? "--"       : (wet ? "WET"     : "DRY");
     String subTxt;
-    if (relayMode) {
+    if (!enabled) {
+      subTxt = "Disabled";
+    } else if (relayMode) {
       subTxt = rainData.relayWet ? "Relay: WET" : "Relay: DRY";
     } else {
       subTxt = rainData.modbusOk
@@ -540,15 +543,21 @@ function updateEdge() {
   html += "<tr><th colspan='3' style='background:#0a2a50'>Rain Sensor"
           " <span style='font-weight:normal;font-size:0.8em;color:#74b9ff'>"
           "(takes effect after reboot)</span></th></tr>\n";
+  html += "<tr><td>Rain Sensor</td><td>"
+          "<label style='cursor:pointer'>"
+          "<input type='checkbox' name='rainEnabled' value='1'" +
+          String(deviceConfig.rainEnabled ? " checked" : "") +
+          "> Enabled</label></td>"
+          "<td>Uncheck to disable the rain sensor entirely (e.g. on XIAO Sense which lacks rain sensor hardware).</td></tr>\n";
   html += "<tr><td>Sensor Mode</td><td>";
   html += "<select name='rainMode' style='" + inpStyle + "width:140px;'>";
   html += "<option value='0'" + String(deviceConfig.rainMode == 0 ? " selected" : "") +
-          ">Relay (IO38)</option>";
+          ">Relay</option>";
   html += "<option value='1'" + String(deviceConfig.rainMode == 1 ? " selected" : "") +
           ">RS485 Modbus</option>";
   html += "</select></td>"
-          "<td>Relay: reads IO38 (INPUT_PULLUP, LOW=wet). "
-          "RS485: polls ZTS-3000 via Modbus RTU on IO39\u201341.</td></tr>\n";
+          "<td>Relay: senses relay contact closure via GPIO. "
+          "RS485: polls ZTS-3000 via Modbus RTU.</td></tr>\n";
 
   // ── Identity ──────────────────────────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>Identity</th></tr>\n";

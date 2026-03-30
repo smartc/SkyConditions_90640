@@ -185,9 +185,19 @@ static void registerScan()
 
 void rainSensorSetup()
 {
-    // Relay input is always initialised (negligible cost, and mode can change in config).
-    pinMode(RAIN_RELAY_PIN, INPUT_PULLUP);
-    Debug.printf("[Rain] Relay on IO%d (INPUT_PULLUP; LOW=wet)\n", RAIN_RELAY_PIN);
+    // Relay pins – scheme differs by board (see config.h).
+#if RAIN_RELAY_DRIVE_PIN >= 0
+    // Two-pin: drive one side HIGH; sense the other with a pulldown.
+    pinMode(RAIN_RELAY_DRIVE_PIN, OUTPUT);
+    digitalWrite(RAIN_RELAY_DRIVE_PIN, HIGH);
+    pinMode(RAIN_RELAY_SENSE_PIN, INPUT_PULLDOWN);
+    Debug.printf("[Rain] Relay drive=GPIO%d(HIGH), sense=GPIO%d(INPUT_PULLDOWN; HIGH=wet)\n",
+                 RAIN_RELAY_DRIVE_PIN, RAIN_RELAY_SENSE_PIN);
+#else
+    // Single-pin: relay pulls sense pin to GND.
+    pinMode(RAIN_RELAY_SENSE_PIN, INPUT_PULLUP);
+    Debug.printf("[Rain] Relay on GPIO%d (INPUT_PULLUP; LOW=wet)\n", RAIN_RELAY_SENSE_PIN);
+#endif
 
     if (deviceConfig.rainMode == 1) {
         // RS485 direction control – start in receive mode (RE# low, DE low)
@@ -212,7 +222,11 @@ void rainSensorLoop()
     if (deviceConfig.rainMode == 0) {
         // --- Relay mode ---
         bool prevRelay = rainData.relayWet;
-        rainData.relayWet = (digitalRead(RAIN_RELAY_PIN) == LOW);
+#if RAIN_RELAY_DRIVE_PIN >= 0
+        rainData.relayWet = (digitalRead(RAIN_RELAY_SENSE_PIN) == HIGH);
+#else
+        rainData.relayWet = (digitalRead(RAIN_RELAY_SENSE_PIN) == LOW);
+#endif
         if (rainData.relayWet != prevRelay) {
             Debug.printf("[Rain] Relay changed: %s\n", rainData.relayWet ? "WET" : "DRY");
             broadcastRainState();

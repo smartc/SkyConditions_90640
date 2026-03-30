@@ -11,6 +11,7 @@
 #include "alpaca.h"
 #include "sky_sensor.h"
 #include "config_store.h"
+#include "rain_sensor.h"
 #include "debug.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -124,13 +125,23 @@ static void handleManagementVersions()
 
 static void handleManagementDevices()
 {
-  StaticJsonDocument<400> json;
-  JsonArray arr    = json.createNestedArray("Value");
-  JsonObject dev   = arr.createNestedObject();
-  dev["DeviceName"]   = DEVICE_NAME;
-  dev["DeviceType"]   = DEVICE_TYPE;
-  dev["DeviceNumber"] = DEVICE_NUMBER;
-  dev["UniqueID"]     = getUniqueID();
+  StaticJsonDocument<700> json;
+  JsonArray arr = json.createNestedArray("Value");
+
+  JsonObject oc = arr.createNestedObject();
+  oc["DeviceName"]   = DEVICE_NAME;
+  oc["DeviceType"]   = DEVICE_TYPE;
+  oc["DeviceNumber"] = DEVICE_NUMBER;
+  oc["UniqueID"]     = getUniqueID();
+
+  if (deviceConfig.rainEnabled) {
+    JsonObject sm = arr.createNestedObject();
+    sm["DeviceName"]   = "Rain/Snow Safety Monitor";
+    sm["DeviceType"]   = "safetymonitor";
+    sm["DeviceNumber"] = 0;
+    sm["UniqueID"]     = getUniqueID() + "-SM";
+  }
+
   sendJSON(json);
 }
 
@@ -419,6 +430,75 @@ static void handlePutRefresh()
 }
 
 // ---------------------------------------------------------------------------
+// SafetyMonitor device – rain/snow relay
+// ---------------------------------------------------------------------------
+
+static bool smConnected = false;
+
+static void handleSmGetConnected()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = smConnected;
+  sendJSON(json);
+}
+
+static void handleSmPutConnected()
+{
+  StaticJsonDocument<256> json;
+  if (!hasArgCI("Connected")) {
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Missing Connected parameter";
+    sendJSONStatus(json, 400);
+    return;
+  }
+  String sl = getArgCI("Connected"); sl.toLowerCase();
+  if (sl != "true" && sl != "false") {
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Connected value must be 'true' or 'false'";
+    sendJSONStatus(json, 400);
+    return;
+  }
+  smConnected = (sl == "true");
+  sendJSON(json);
+}
+
+static void handleSmIsSafe()
+{
+  StaticJsonDocument<256> json;
+  // true = safe (dry), false = unsafe (wet).
+  json["Value"] = !rainIsWet();
+  sendJSON(json);
+}
+
+static void handleSmName()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = "Rain/Snow Safety Monitor";
+  sendJSON(json);
+}
+
+static void handleSmDescription()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = "Rain and snow safety monitor via relay contact sensor";
+  sendJSON(json);
+}
+
+static void handleSmDriverInfo()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = String("Rain/Snow Safety Monitor v") + MANUFACTURER_V + " by " + MANUFACTURER;
+  sendJSON(json);
+}
+
+static void handleSmInterfaceVersion()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = 1;
+  sendJSON(json);
+}
+
+// ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
 
@@ -490,6 +570,22 @@ static void registerRoutes()
   alpacaServer.on((base + "/winddirection").c_str(), HTTP_GET, sendNotImplemented);
   alpacaServer.on((base + "/windgust").c_str(),      HTTP_GET, sendNotImplemented);
   alpacaServer.on((base + "/windspeed").c_str(),     HTTP_GET, sendNotImplemented);
+
+  // SafetyMonitor device
+  String sm = "/api/v1/safetymonitor/0";
+  alpacaServer.on((sm + "/action").c_str(),           HTTP_PUT, handleActionNotImpl);
+  alpacaServer.on((sm + "/commandblind").c_str(),     HTTP_PUT, handleActionNotImpl);
+  alpacaServer.on((sm + "/commandbool").c_str(),      HTTP_PUT, handleActionNotImpl);
+  alpacaServer.on((sm + "/commandstring").c_str(),    HTTP_PUT, handleActionNotImpl);
+  alpacaServer.on((sm + "/connected").c_str(),        HTTP_GET, handleSmGetConnected);
+  alpacaServer.on((sm + "/connected").c_str(),        HTTP_PUT, handleSmPutConnected);
+  alpacaServer.on((sm + "/description").c_str(),      HTTP_GET, handleSmDescription);
+  alpacaServer.on((sm + "/driverinfo").c_str(),       HTTP_GET, handleSmDriverInfo);
+  alpacaServer.on((sm + "/driverversion").c_str(),    HTTP_GET, handleDriverVersion);
+  alpacaServer.on((sm + "/interfaceversion").c_str(), HTTP_GET, handleSmInterfaceVersion);
+  alpacaServer.on((sm + "/name").c_str(),             HTTP_GET, handleSmName);
+  alpacaServer.on((sm + "/supportedactions").c_str(), HTTP_GET, handleSupportedActions);
+  alpacaServer.on((sm + "/issafe").c_str(),           HTTP_GET, handleSmIsSafe);
 }
 
 // ---------------------------------------------------------------------------
