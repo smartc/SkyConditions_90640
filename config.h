@@ -43,6 +43,18 @@
 #define BRIGHTNESS_INTERVAL_MS  5000   // 5 s (TSL2591)
 #define JPEG_INTERVAL_MS        30000  // 30 s  thermal JPEG snapshot
 
+// DHT ambient temperature / humidity sensor (optional – see dht_sensor.h/.cpp)
+// Uses the D6/D7 Grove connector; data line on D7 (GPIO44, UART0 RX) – clean input,
+// no boot-time noise.  D6 (GPIO43, UART0 TX) is left unused.
+// Change DHT_TYPE to DHT22 for better precision (0.1°C / ±0.5°C vs 1°C / ±2°C).
+#if defined(BOARD_XIAO_SENSE)
+  #define DHT_DATA_PIN   44    // D7 = GPIO44
+#else
+  #define DHT_DATA_PIN   (-1)  // not assigned for Dev board – define as needed
+#endif
+#define DHT_TYPE         DHT11
+#define DHT_INTERVAL_MS  5000  // match sensor read rate; DHT11 minimum is 1 s
+
 // ASCOM Alpaca Configuration
 #define ALPACA_PORT           11111
 #define ALPACA_DISCOVERY_PORT 32227

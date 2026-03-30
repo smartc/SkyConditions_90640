@@ -47,6 +47,9 @@ struct DeviceConfig {
   // Rain sensor
   uint8_t  rainMode;             // 0 = Relay (IO38), 1 = RS485 Modbus
   bool     rainEnabled;          // false = rain sensor entirely disabled
+
+  // DHT ambient sensor
+  bool     dhtEnabled;           // true = use DHT for ambient temp (overrides MLX die temp)
 };
 
 // Load settings from NVS; fills in defaults if keys are absent.

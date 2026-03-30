@@ -7,6 +7,7 @@
 #include "sky_sensor.h"
 #include "config_store.h"
 #include "rain_sensor.h"
+#include "dht_sensor.h"
 
 // ---------------------------------------------------------------------------
 // Shared CSS
@@ -123,10 +124,20 @@ inline String getHomePage()
           "    <div class='stat-value max-temp' id='max-temp'>--</div></div>\n";
   html += "  <div class='stat-box'><div class='stat-label'>Frame Median</div>"
           "    <div class='stat-value med-temp' id='med-temp'>--</div></div>\n";
-  html += "  <div class='stat-box'><div class='stat-label'>Ambient</div>"
-          "    <div class='stat-value amb-temp' id='amb-temp'>" +
-          (skyConditions.hasData() ? String(skyConditions.getAmbientTemperature(), 1) + "°C" : "--") +
-          "</div></div>\n";
+  {
+    String ambSrc = (deviceConfig.dhtEnabled && dhtData.valid) ? "DHT" : "MLX die";
+    html += "  <div class='stat-box'><div class='stat-label'>Ambient<br>"
+            "<span style='font-size:0.8em;color:#8899aa' id='amb-src'>" + ambSrc + "</span></div>"
+            "    <div class='stat-value amb-temp' id='amb-temp'>" +
+            (skyConditions.hasData() ? String(skyConditions.getAmbientTemperature(), 1) + "°C" : "--") +
+            "</div></div>\n";
+  }
+  if (deviceConfig.dhtEnabled) {
+    String humVal = dhtData.valid ? String(dhtData.humidity, 0) + "%" : "--";
+    html += "  <div class='stat-box'><div class='stat-label'>Humidity<br>"
+            "<span style='font-size:0.8em;color:#8899aa'>DHT</span></div>"
+            "    <div class='stat-value' id='hum-val' style='color:#74b9ff'>" + humVal + "</div></div>\n";
+  }
   html += "  <div class='stat-box'><div class='stat-label'>Cloud Cover<br><span style='font-size:0.8em;color:#74b9ff'>Mean</span></div>"
           "    <div class='stat-value' id='cloud-mean' style='color:#dfe6e9'>" +
           (skyConditions.hasData() ? String(skyConditions.getCloudCoverMean(), 0) + "%" : "--") +
@@ -264,6 +275,8 @@ function connect() {
           document.getElementById('cloud-px').textContent   = nd ? d.cloud_px.toFixed(0)   + '%'         : '--';
           document.getElementById('lux-val').textContent    = nb ? fmtLux(d.lux)                         : '--';
           document.getElementById('sqm-val').textContent    = nb ? d.sqm.toFixed(2)        + ' mag/″²'   : '--';
+          const humEl = document.getElementById('hum-val');
+          if (humEl) humEl.textContent = (d.dht_hum !== undefined) ? d.dht_hum.toFixed(0) + '%' : '--';
         }
       } catch(e) {}
       return;
@@ -558,6 +571,19 @@ function updateEdge() {
   html += "</select></td>"
           "<td>Relay: senses relay contact closure via GPIO. "
           "RS485: polls ZTS-3000 via Modbus RTU.</td></tr>\n";
+
+  // ── DHT Ambient Sensor ────────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>DHT Ambient Sensor"
+          " <span style='font-weight:normal;font-size:0.8em;color:#74b9ff'>"
+          "(takes effect after reboot)</span></th></tr>\n";
+  html += "<tr><td>DHT Sensor</td><td>"
+          "<label style='cursor:pointer'>"
+          "<input type='checkbox' name='dhtEnabled' value='1'" +
+          String(deviceConfig.dhtEnabled ? " checked" : "") +
+          "> Enabled</label></td>"
+          "<td>DHT11/22 on D7 (GPIO44). When enabled, replaces MLX90640 die temperature "
+          "with a true external ambient reading for cloud-cover calculations. "
+          "Also exposes Humidity via the ASCOM Alpaca interface.</td></tr>\n";
 
   // ── Identity ──────────────────────────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>Identity</th></tr>\n";

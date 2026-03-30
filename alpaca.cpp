@@ -12,6 +12,7 @@
 #include "sky_sensor.h"
 #include "config_store.h"
 #include "rain_sensor.h"
+#include "dht_sensor.h"
 #include "debug.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -422,6 +423,14 @@ static void handleGetSensorDescription()
   sendJSON(json);
 }
 
+static void handleGetHumidity()
+{
+  if (!deviceConfig.dhtEnabled || !dhtData.valid) { sendNotImplemented(); return; }
+  StaticJsonDocument<256> json;
+  json["Value"] = round(dhtData.humidity * 10.0) / 10.0;
+  sendJSON(json);
+}
+
 static void handlePutRefresh()
 {
   skyConditions.requestRefresh();
@@ -563,7 +572,7 @@ static void registerRoutes()
   // ObservingConditions – not implemented sensors
   alpacaServer.on((base + "/cloudcover").c_str(),    HTTP_GET, handleGetCloudCover);
   alpacaServer.on((base + "/dewpoint").c_str(),      HTTP_GET, sendNotImplemented);
-  alpacaServer.on((base + "/humidity").c_str(),      HTTP_GET, sendNotImplemented);
+  alpacaServer.on((base + "/humidity").c_str(),      HTTP_GET, handleGetHumidity);
   alpacaServer.on((base + "/pressure").c_str(),      HTTP_GET, sendNotImplemented);
   alpacaServer.on((base + "/rainrate").c_str(),      HTTP_GET, sendNotImplemented);
   alpacaServer.on((base + "/starfwhm").c_str(),      HTTP_GET, sendNotImplemented);

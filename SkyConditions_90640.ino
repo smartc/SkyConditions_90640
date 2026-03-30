@@ -28,6 +28,7 @@
 #include "config_store.h"
 #include "mqtt_handler.h"
 #include "rain_sensor.h"
+#include "dht_sensor.h"
 
 #include <Wire.h>
 #include <Adafruit_MLX90640.h>
@@ -226,6 +227,9 @@ void setup()
   // ── Rain / snow sensor (relay + RS485 Modbus) ────────────────────────────
   if (deviceConfig.rainEnabled) rainSensorSetup();
 
+  // ── DHT ambient temperature / humidity sensor (optional) ─────────────────
+  if (deviceConfig.dhtEnabled) dhtSetup();
+
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
 
@@ -261,6 +265,9 @@ void loop()
   // Rain / snow sensor – relay read + periodic Modbus poll.
   if (deviceConfig.rainEnabled) rainSensorLoop();
 
+  // DHT ambient sensor – periodic read.
+  if (deviceConfig.dhtEnabled) dhtLoop();
+
   // Honour an ASCOM PUT /refresh request from a connected client.
   if (skyConditions.isRefreshRequested()) {
     skyConditions.clearRefreshRequest();
@@ -289,8 +296,11 @@ void readSensor()
     return;
   }
 
-  // getTa(false) returns the sensor die temperature in °C.
-  float ambientTemp = mlx.getTa(false);
+  // Ambient temperature: prefer DHT when enabled and valid (MLX die temp runs high
+  // due to self-heating; an external DHT gives a true ambient reference).
+  float ambientTemp = (deviceConfig.dhtEnabled && dhtData.valid)
+                      ? dhtData.temperature
+                      : mlx.getTa(false);
 
   skyConditions.update(thermalFrame, ambientTemp);
 

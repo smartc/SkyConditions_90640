@@ -12,6 +12,7 @@
 #include "history.h"
 #include "mqtt_handler.h"
 #include "rain_sensor.h"
+#include "dht_sensor.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <img_converters.h>
@@ -240,6 +241,9 @@ static void handleSaveConfig()
 
   // Rain sensor
   deviceConfig.rainEnabled = webUiServer.hasArg("rainEnabled");
+
+  // DHT sensor
+  deviceConfig.dhtEnabled  = webUiServer.hasArg("dhtEnabled");
   if (webUiServer.hasArg("rainMode"))
     deviceConfig.rainMode = (uint8_t)(webUiServer.arg("rainMode").toInt() != 0 ? 1 : 0);
 
@@ -349,17 +353,21 @@ void broadcastSensorState()
   if (wsServer.connectedClients() == 0) return;
   if (!skyConditions.hasData()) return;
 
-  char buf[192];
-  snprintf(buf, sizeof(buf),
+  char buf[256];
+  int len = snprintf(buf, sizeof(buf),
     "{\"amb\":%.1f,\"cloud_mean\":%.1f,\"cloud_px\":%.1f"
     ",\"lux\":%.6f,\"sqm\":%.2f"
-    ",\"has_data\":true,\"has_brightness\":%s}",
+    ",\"has_data\":true,\"has_brightness\":%s",
     skyConditions.getAmbientTemperature(),
     skyConditions.getCloudCoverMean(),
     skyConditions.getCloudCoverPixel(),
     skyConditions.getLux(),
     skyConditions.getSqm(),
     skyConditions.hasBrightnessData() ? "true" : "false");
+  if (deviceConfig.dhtEnabled && dhtData.valid)
+    len += snprintf(buf + len, sizeof(buf) - len,
+                    ",\"dht_hum\":%.1f", dhtData.humidity);
+  strncat(buf, "}", sizeof(buf) - len - 1);
   wsServer.broadcastTXT(buf);
 }
 
