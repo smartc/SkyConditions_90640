@@ -425,7 +425,7 @@ static void handleGetSensorDescription()
 
 static void handleGetHumidity()
 {
-  if (!deviceConfig.dhtEnabled || !dhtData.valid) { sendNotImplemented(); return; }
+  if (!deviceConfig.dhtType || !dhtData.valid) { sendNotImplemented(); return; }
   StaticJsonDocument<256> json;
   json["Value"] = round(dhtData.humidity * 10.0) / 10.0;
   sendJSON(json);

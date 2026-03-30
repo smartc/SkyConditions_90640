@@ -6,7 +6,8 @@
 /*
  * Optional DHT ambient temperature / humidity sensor.
  *
- * Enabled at runtime via deviceConfig.dhtEnabled (NVS key "dhtEn").
+ * Selected at runtime via deviceConfig.dhtType (NVS key "dhtType"):
+ *   0 = disabled, 1 = DHT11, 2 = DHT22.
  * When valid, dhtData.temperature replaces the MLX90640 die temperature
  * as the ambient reference for cloud-cover calculations.
  *
@@ -22,7 +23,7 @@ struct DhtData {
 
 extern DhtData dhtData;
 
-void dhtSetup();   // call once in setup() when dhtEnabled
-void dhtLoop();    // call every loop() iteration when dhtEnabled
+void dhtSetup();   // call once in setup() when dhtType != 0
+void dhtLoop();    // call every loop() iteration when dhtType != 0
 
 #endif // DHT_SENSOR_H

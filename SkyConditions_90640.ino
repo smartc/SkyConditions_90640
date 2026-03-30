@@ -228,7 +228,7 @@ void setup()
   if (deviceConfig.rainEnabled) rainSensorSetup();
 
   // ── DHT ambient temperature / humidity sensor (optional) ─────────────────
-  if (deviceConfig.dhtEnabled) dhtSetup();
+  if (deviceConfig.dhtType != 0) dhtSetup();
 
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
@@ -266,7 +266,7 @@ void loop()
   if (deviceConfig.rainEnabled) rainSensorLoop();
 
   // DHT ambient sensor – periodic read.
-  if (deviceConfig.dhtEnabled) dhtLoop();
+  if (deviceConfig.dhtType != 0) dhtLoop();
 
   // Honour an ASCOM PUT /refresh request from a connected client.
   if (skyConditions.isRefreshRequested()) {
@@ -298,7 +298,7 @@ void readSensor()
 
   // Ambient temperature: prefer DHT when enabled and valid (MLX die temp runs high
   // due to self-heating; an external DHT gives a true ambient reference).
-  float ambientTemp = (deviceConfig.dhtEnabled && dhtData.valid)
+  float ambientTemp = (deviceConfig.dhtType != 0 && dhtData.valid)
                       ? dhtData.temperature
                       : mlx.getTa(false);
 

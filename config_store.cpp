@@ -59,7 +59,7 @@ void configLoad(DeviceConfig &cfg)
   cfg.rainEnabled        = prefs.getBool ("rainEn",      true);  // default: enabled
 
   // DHT sensor
-  cfg.dhtEnabled         = prefs.getBool ("dhtEn",       false); // default: disabled (optional hardware)
+  cfg.dhtType            = prefs.getUChar("dhtType",     0);     // default: disabled
 
   prefs.end();
 }
@@ -90,7 +90,7 @@ void configSave(const DeviceConfig &cfg)
   prefs.putUChar ("cloudEdge",   cfg.cloudEdgeExclude);
   prefs.putUChar ("rainMode",    cfg.rainMode);
   prefs.putBool  ("rainEn",      cfg.rainEnabled);
-  prefs.putBool  ("dhtEn",       cfg.dhtEnabled);
+  prefs.putUChar ("dhtType",     cfg.dhtType);
 
   prefs.end();
 }

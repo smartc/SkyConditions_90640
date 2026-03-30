@@ -125,14 +125,14 @@ inline String getHomePage()
   html += "  <div class='stat-box'><div class='stat-label'>Frame Median</div>"
           "    <div class='stat-value med-temp' id='med-temp'>--</div></div>\n";
   {
-    String ambSrc = (deviceConfig.dhtEnabled && dhtData.valid) ? "DHT" : "MLX die";
+    String ambSrc = (deviceConfig.dhtType && dhtData.valid) ? "DHT" : "MLX die";
     html += "  <div class='stat-box'><div class='stat-label'>Ambient<br>"
             "<span style='font-size:0.8em;color:#8899aa' id='amb-src'>" + ambSrc + "</span></div>"
             "    <div class='stat-value amb-temp' id='amb-temp'>" +
             (skyConditions.hasData() ? String(skyConditions.getAmbientTemperature(), 1) + "°C" : "--") +
             "</div></div>\n";
   }
-  if (deviceConfig.dhtEnabled) {
+  if (deviceConfig.dhtType) {
     String humVal = dhtData.valid ? String(dhtData.humidity, 0) + "%" : "--";
     html += "  <div class='stat-box'><div class='stat-label'>Humidity<br>"
             "<span style='font-size:0.8em;color:#8899aa'>DHT</span></div>"
@@ -576,14 +576,16 @@ function updateEdge() {
   html += "<tr><th colspan='3' style='background:#0a2a50'>DHT Ambient Sensor"
           " <span style='font-weight:normal;font-size:0.8em;color:#74b9ff'>"
           "(takes effect after reboot)</span></th></tr>\n";
-  html += "<tr><td>DHT Sensor</td><td>"
-          "<label style='cursor:pointer'>"
-          "<input type='checkbox' name='dhtEnabled' value='1'" +
-          String(deviceConfig.dhtEnabled ? " checked" : "") +
-          "> Enabled</label></td>"
-          "<td>DHT11/22 on D7 (GPIO44). When enabled, replaces MLX90640 die temperature "
-          "with a true external ambient reading for cloud-cover calculations. "
-          "Also exposes Humidity via the ASCOM Alpaca interface.</td></tr>\n";
+  html += "<tr><td>DHT Sensor</td><td>";
+  html += "<select name='dhtType' style='" + inpStyle + "width:120px;'>";
+  html += "<option value='0'" + String(deviceConfig.dhtType == 0 ? " selected" : "") + ">Disabled</option>";
+  html += "<option value='1'" + String(deviceConfig.dhtType == 1 ? " selected" : "") + ">DHT11</option>";
+  html += "<option value='2'" + String(deviceConfig.dhtType == 2 ? " selected" : "") + ">DHT22</option>";
+  html += "</select></td>"
+          "<td>Sensor on D7 (GPIO44). Replaces MLX die temperature with true external ambient "
+          "for cloud-cover calculations, and exposes Humidity via Alpaca. "
+          "DHT11: ±2°C / 1°C res. &nbsp; DHT22: ±0.5°C / 0.1°C res. "
+          "Takes effect after reboot.</td></tr>\n";
 
   // ── Identity ──────────────────────────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>Identity</th></tr>\n";

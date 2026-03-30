@@ -1,15 +1,17 @@
 /*
  * DHT ambient temperature / humidity sensor
  * Reads DHT_DATA_PIN at DHT_INTERVAL_MS; valid data available via dhtData.
+ * Sensor type (DHT11 / DHT22) is selected at runtime from deviceConfig.dhtType.
  */
 
 #include "dht_sensor.h"
 #include "config.h"
+#include "config_store.h"
 #include "debug.h"
 
 #if DHT_DATA_PIN >= 0
 #include <DHT.h>
-static DHT dht(DHT_DATA_PIN, DHT_TYPE);
+static DHT *dhtObj = nullptr;
 #endif
 
 DhtData dhtData = {};
@@ -17,9 +19,12 @@ DhtData dhtData = {};
 void dhtSetup()
 {
 #if DHT_DATA_PIN >= 0
-  dht.begin();
-  Debug.printf("[DHT] type %d on GPIO%d – interval %d ms\n",
-               DHT_TYPE, DHT_DATA_PIN, DHT_INTERVAL_MS);
+  uint8_t type = (deviceConfig.dhtType == 2) ? DHT22 : DHT11;
+  dhtObj = new DHT(DHT_DATA_PIN, type);
+  dhtObj->begin();
+  const char *typeName = (type == DHT22) ? "DHT22" : "DHT11";
+  Debug.printf("[DHT] %s on GPIO%d – interval %d ms\n",
+               typeName, DHT_DATA_PIN, DHT_INTERVAL_MS);
 #else
   Debug.println("[DHT] no pin defined for this board – sensor disabled");
 #endif
@@ -28,12 +33,14 @@ void dhtSetup()
 void dhtLoop()
 {
 #if DHT_DATA_PIN >= 0
+  if (!dhtObj) return;
+
   static unsigned long lastRead = 0;
   if (millis() - lastRead < DHT_INTERVAL_MS) return;
   lastRead = millis();
 
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
+  float t = dhtObj->readTemperature();
+  float h = dhtObj->readHumidity();
 
   if (!isnan(t) && !isnan(h)) {
     bool changed = (!dhtData.valid
