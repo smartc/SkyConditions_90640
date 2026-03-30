@@ -126,7 +126,7 @@ static void handleManagementVersions()
 
 static void handleManagementDevices()
 {
-  StaticJsonDocument<700> json;
+  StaticJsonDocument<900> json;
   JsonArray arr = json.createNestedArray("Value");
 
   JsonObject oc = arr.createNestedObject();
@@ -143,6 +143,14 @@ static void handleManagementDevices()
     sm["UniqueID"]     = getUniqueID() + "-SM";
   }
 
+  {
+    JsonObject sw = arr.createNestedObject();
+    sw["DeviceName"]   = "Cloud Cover Switch";
+    sw["DeviceType"]   = "switch";
+    sw["DeviceNumber"] = 0;
+    sw["UniqueID"]     = getUniqueID() + "-SW";
+  }
+
   sendJSON(json);
 }
 
@@ -157,14 +165,20 @@ static void handleManagementDescription()
   sendJSON(json);
 }
 
-static void handleAlpacaSetup()
+// Redirect requests from the Alpaca port (11111) to the Web UI port (80).
+// The Alpaca spec requires /setup endpoints to return HTML; a 302 satisfies that.
+static void redirectToRoot()
 {
-  String html = "<html><head><title>SkyConditions Setup</title></head>"
-                "<body><h1>MLX90640 Sky Conditions Sensor</h1>"
-                "<p>ASCOM Alpaca running on port " + String(ALPACA_PORT) + "</p>"
-                "<p>IP: " + WiFi.localIP().toString() + "</p>"
-                "</body></html>";
-  alpacaServer.send(200, "text/html", html);
+  String url = "http://" + WiFi.localIP().toString() + "/";
+  alpacaServer.sendHeader("Location", url, true);
+  alpacaServer.send(302, "text/plain", "");
+}
+
+static void redirectToSetup()
+{
+  String url = "http://" + WiFi.localIP().toString() + "/setup";
+  alpacaServer.sendHeader("Location", url, true);
+  alpacaServer.send(302, "text/plain", "");
 }
 
 // ---------------------------------------------------------------------------
@@ -508,6 +522,193 @@ static void handleSmInterfaceVersion()
 }
 
 // ---------------------------------------------------------------------------
+// Switch device – cloud cover indicator (read-only, ISwitchV2)
+//
+// One switch, Id=0: Cloud Cover
+//   GetSwitchValue → cloud cover % (0–100, analog)
+//   GetSwitch      → true when cloud cover ≥ 50 %
+//   CanWrite       → false (indicator only)
+//   Min=0, Max=100, Step=1
+// ---------------------------------------------------------------------------
+
+static bool swConnected = false;
+
+// Validates the 'id' parameter (case-insensitive).  Sends error + returns false if invalid.
+// Non-numeric Id → HTTP 400 (protocol/syntactic error per Alpaca spec).
+// Out-of-range integer Id → HTTP 200 + ErrorNumber 1025 (ASCOM semantic error).
+static bool switchIdOk()
+{
+  if (!hasArgCI("id")) {
+    StaticJsonDocument<256> json;
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Missing Id parameter";
+    sendJSONStatus(json, 400);
+    return false;
+  }
+  String raw = getArgCI("id");
+  // Validate it is a pure integer (optional leading minus + digits only).
+  int start = (raw.length() > 0 && raw[0] == '-') ? 1 : 0;
+  bool numeric = (raw.length() > (unsigned)start);
+  for (int i = start; i < (int)raw.length() && numeric; i++) {
+    if (!isdigit((unsigned char)raw[i])) numeric = false;
+  }
+  if (!numeric) {
+    StaticJsonDocument<256> json;
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Id parameter must be an integer";
+    sendJSONStatus(json, 400);
+    return false;
+  }
+  int id = raw.toInt();
+  if (id < 0 || id >= 1) {
+    // Semantically out of range → HTTP 200 with ASCOM error 1025.
+    StaticJsonDocument<256> json;
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Invalid switch Id: must be 0";
+    sendJSON(json);
+    return false;
+  }
+  return true;
+}
+
+static void handleSwGetConnected()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = swConnected;
+  sendJSON(json);
+}
+
+static void handleSwPutConnected()
+{
+  StaticJsonDocument<256> json;
+  if (!hasArgCI("Connected")) {
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Missing Connected parameter";
+    sendJSONStatus(json, 400);
+    return;
+  }
+  String sl = getArgCI("Connected"); sl.toLowerCase();
+  if (sl != "true" && sl != "false") {
+    json["ErrorNumber"]  = 1025;
+    json["ErrorMessage"] = "Connected value must be 'true' or 'false'";
+    sendJSONStatus(json, 400);
+    return;
+  }
+  swConnected = (sl == "true");
+  sendJSON(json);
+}
+
+static void handleSwMaxSwitch()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = 1;
+  sendJSON(json);
+}
+
+static void handleSwCanWrite()
+{
+  if (!switchIdOk()) return;
+  StaticJsonDocument<256> json;
+  json["Value"] = false;
+  sendJSON(json);
+}
+
+static void handleSwGetSwitch()
+{
+  if (!switchIdOk()) return;
+  StaticJsonDocument<256> json;
+  // Must always return a value per spec; return false when no data yet.
+  json["Value"] = skyConditions.hasData() && (skyConditions.getCloudCover() >= 50.0f);
+  sendJSON(json);
+}
+
+static void handleSwGetSwitchDescription()
+{
+  if (!switchIdOk()) return;
+  StaticJsonDocument<300> json;
+  json["Value"] = "Cloud cover percentage (0-100%). GetSwitch is true when cover >= 50%.";
+  sendJSON(json);
+}
+
+static void handleSwGetSwitchName()
+{
+  if (!switchIdOk()) return;
+  StaticJsonDocument<256> json;
+  json["Value"] = "Cloud Cover";
+  sendJSON(json);
+}
+
+static void handleSwGetSwitchValue()
+{
+  if (!switchIdOk()) return;
+  StaticJsonDocument<256> json;
+  // Must always return a value per spec; return 0.0 when no data yet.
+  json["Value"] = skyConditions.hasData()
+                  ? (double)(round(skyConditions.getCloudCover() * 10.0) / 10.0)
+                  : 0.0;
+  sendJSON(json);
+}
+
+static void handleSwMinSwitchValue()
+{
+  if (!switchIdOk()) return;
+  StaticJsonDocument<256> json;
+  json["Value"] = 0.0;
+  sendJSON(json);
+}
+
+static void handleSwMaxSwitchValue()
+{
+  if (!switchIdOk()) return;
+  StaticJsonDocument<256> json;
+  json["Value"] = 100.0;
+  sendJSON(json);
+}
+
+static void handleSwSwitchStep()
+{
+  if (!switchIdOk()) return;
+  StaticJsonDocument<256> json;
+  json["Value"] = 1.0;
+  sendJSON(json);
+}
+
+static void handleSwReadOnly()
+{
+  // Validate Id first (1025 for invalid), then return 1024 for valid-but-read-only.
+  if (!switchIdOk()) return;
+  sendNotImplemented();
+}
+
+static void handleSwName()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = "Cloud Cover Switch";
+  sendJSON(json);
+}
+
+static void handleSwDescription()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = "Read-only cloud cover indicator derived from MLX90640 thermal camera";
+  sendJSON(json);
+}
+
+static void handleSwDriverInfo()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = String("Cloud Cover Switch v") + MANUFACTURER_V + " by " + MANUFACTURER;
+  sendJSON(json);
+}
+
+static void handleSwInterfaceVersion()
+{
+  StaticJsonDocument<256> json;
+  json["Value"] = 2;  // ISwitchV2
+  sendJSON(json);
+}
+
+// ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
 
@@ -532,13 +733,16 @@ static void registerRoutes()
   alpacaServer.on("/management/apiversions",          HTTP_GET, handleManagementVersions);
   alpacaServer.on("/management/v1/configureddevices", HTTP_GET, handleManagementDevices);
   alpacaServer.on("/management/v1/description",       HTTP_GET, handleManagementDescription);
-  alpacaServer.on("/setup",                           HTTP_GET, handleAlpacaSetup);
+  // Redirect setup/UI paths on the Alpaca port to the Web UI on port 80.
+  alpacaServer.on("/",      HTTP_GET, redirectToRoot);
+  alpacaServer.on("/setup", HTTP_GET, redirectToSetup);
 
   String base = "/api/v1/" + String(DEVICE_TYPE) + "/" + String(DEVICE_NUMBER);
 
   // Device base path (with and without trailing slash)
-  alpacaServer.on(base.c_str(),             HTTP_GET, handleDeviceBase);
-  alpacaServer.on((base + "/").c_str(),     HTTP_GET, handleDeviceBase);
+  alpacaServer.on(base.c_str(),              HTTP_GET, handleDeviceBase);
+  alpacaServer.on((base + "/").c_str(),      HTTP_GET, handleDeviceBase);
+  alpacaServer.on((base + "/setup").c_str(), HTTP_GET, redirectToSetup);
 
   // Common ASCOM methods
   alpacaServer.on((base + "/action").c_str(),           HTTP_PUT, handleActionNotImpl);
@@ -595,6 +799,35 @@ static void registerRoutes()
   alpacaServer.on((sm + "/name").c_str(),             HTTP_GET, handleSmName);
   alpacaServer.on((sm + "/supportedactions").c_str(), HTTP_GET, handleSupportedActions);
   alpacaServer.on((sm + "/issafe").c_str(),           HTTP_GET, handleSmIsSafe);
+  alpacaServer.on((sm + "/setup").c_str(),            HTTP_GET, redirectToSetup);
+
+  // Switch device – cloud cover indicator
+  String sw = "/api/v1/switch/0";
+  alpacaServer.on((sw + "/action").c_str(),              HTTP_PUT, handleActionNotImpl);
+  alpacaServer.on((sw + "/commandblind").c_str(),        HTTP_PUT, handleActionNotImpl);
+  alpacaServer.on((sw + "/commandbool").c_str(),         HTTP_PUT, handleActionNotImpl);
+  alpacaServer.on((sw + "/commandstring").c_str(),       HTTP_PUT, handleActionNotImpl);
+  alpacaServer.on((sw + "/connected").c_str(),           HTTP_GET, handleSwGetConnected);
+  alpacaServer.on((sw + "/connected").c_str(),           HTTP_PUT, handleSwPutConnected);
+  alpacaServer.on((sw + "/description").c_str(),         HTTP_GET, handleSwDescription);
+  alpacaServer.on((sw + "/driverinfo").c_str(),          HTTP_GET, handleSwDriverInfo);
+  alpacaServer.on((sw + "/driverversion").c_str(),       HTTP_GET, handleDriverVersion);
+  alpacaServer.on((sw + "/interfaceversion").c_str(),    HTTP_GET, handleSwInterfaceVersion);
+  alpacaServer.on((sw + "/name").c_str(),                HTTP_GET, handleSwName);
+  alpacaServer.on((sw + "/supportedactions").c_str(),    HTTP_GET, handleSupportedActions);
+  alpacaServer.on((sw + "/maxswitch").c_str(),           HTTP_GET, handleSwMaxSwitch);
+  alpacaServer.on((sw + "/canwrite").c_str(),            HTTP_GET, handleSwCanWrite);
+  alpacaServer.on((sw + "/getswitch").c_str(),           HTTP_GET, handleSwGetSwitch);
+  alpacaServer.on((sw + "/getswitchdescription").c_str(),HTTP_GET, handleSwGetSwitchDescription);
+  alpacaServer.on((sw + "/getswitchname").c_str(),       HTTP_GET, handleSwGetSwitchName);
+  alpacaServer.on((sw + "/getswitchvalue").c_str(),      HTTP_GET, handleSwGetSwitchValue);
+  alpacaServer.on((sw + "/minswitchvalue").c_str(),      HTTP_GET, handleSwMinSwitchValue);
+  alpacaServer.on((sw + "/maxswitchvalue").c_str(),      HTTP_GET, handleSwMaxSwitchValue);
+  alpacaServer.on((sw + "/switchstep").c_str(),          HTTP_GET, handleSwSwitchStep);
+  alpacaServer.on((sw + "/setswitch").c_str(),           HTTP_PUT, handleSwReadOnly);
+  alpacaServer.on((sw + "/setswitchname").c_str(),       HTTP_PUT, handleSwReadOnly);
+  alpacaServer.on((sw + "/setswitchvalue").c_str(),      HTTP_PUT, handleSwReadOnly);
+  alpacaServer.on((sw + "/setup").c_str(),               HTTP_GET, redirectToSetup);
 }
 
 // ---------------------------------------------------------------------------
@@ -609,28 +842,33 @@ static void discoveryTask(void *)
 {
   WiFiUDP udp;
   udp.begin(ALPACA_DISCOVERY_PORT);
-  Debug.println("[Discovery] task started on Core " + String(xPortGetCoreID()));
+  Debug.printf("[Discovery] task started on Core %d, port %d\n",
+               xPortGetCoreID(), ALPACA_DISCOVERY_PORT);
+
+  char resp[32];
+  snprintf(resp, sizeof(resp), "{\"AlpacaPort\":%d}", ALPACA_PORT);
 
   for (;;) {
     int pktSize = udp.parsePacket();
     if (pktSize > 0) {
-      char buf[64];
+      char buf[32];
       int n = udp.read(buf, sizeof(buf) - 1);
       if (n > 0) {
+        // Trim trailing whitespace/newline in-place.
+        while (n > 0 && (buf[n-1] == '\r' || buf[n-1] == '\n' || buf[n-1] == ' '))
+          n--;
         buf[n] = '\0';
-        String s = String(buf);
-        s.trim();
-        if (s.equalsIgnoreCase("alpacadiscovery1")) {
-          String resp = "{\"AlpacaPort\":" + String(ALPACA_PORT) + "}";
+        if (strncasecmp(buf, "alpacadiscovery1", 16) == 0) {
           udp.beginPacket(udp.remoteIP(), udp.remotePort());
-          udp.print(resp);
+          udp.write((const uint8_t *)resp, strlen(resp));
           int ok = udp.endPacket();
-          Debug.printf("[Discovery] replied to %s (ok=%d)\n",
-                       udp.remoteIP().toString().c_str(), ok);
+          Debug.printf("[Discovery] replied to %s:%d (ok=%d)\n",
+                       udp.remoteIP().toString().c_str(),
+                       udp.remotePort(), ok);
         }
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(10));  // 10 ms poll – fast enough, not a busy-wait
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
@@ -650,7 +888,7 @@ void setupAlpacaServer()
   // Pin the discovery task to Core 0 alongside the WiFi stack so it responds
   // immediately regardless of what Core 1 (the Arduino loop) is doing.
   xTaskCreatePinnedToCore(discoveryTask, "alpaca_disc",
-                          2048, nullptr, 1, nullptr, 0);
+                          4096, nullptr, 1, nullptr, 0);
 }
 
 // No-op: discovery is now handled by the FreeRTOS task above.
