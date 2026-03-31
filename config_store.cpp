@@ -58,8 +58,9 @@ void configLoad(DeviceConfig &cfg)
   cfg.rainMode           = prefs.getUChar("rainMode",    0);     // default: Relay
   cfg.rainEnabled        = prefs.getBool ("rainEn",      true);  // default: enabled
 
-  // DHT sensor
+  // Ambient sensor (0=disabled, 1=DHT11, 2=DHT22, 3=BMP180, 4=BMP280)
   cfg.dhtType            = prefs.getUChar("dhtType",     0);     // default: disabled
+  if (cfg.dhtType > 4) cfg.dhtType = 0;                          // clamp unknown values
 
   prefs.end();
 }

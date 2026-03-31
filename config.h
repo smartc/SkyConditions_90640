@@ -43,16 +43,20 @@
 #define BRIGHTNESS_INTERVAL_MS  5000   // 5 s (TSL2591)
 #define JPEG_INTERVAL_MS        30000  // 30 s  thermal JPEG snapshot
 
-// DHT ambient temperature / humidity sensor (optional – see dht_sensor.h/.cpp)
-// Uses the D6/D7 Grove connector; data line on D7 (GPIO44, UART0 RX) – clean input,
-// no boot-time noise.  D6 (GPIO43, UART0 TX) is left unused.
-// Sensor type (DHT11 / DHT22) is selected at runtime via Setup page → dhtType.
+// Ambient temperature sensor (optional – see dht_sensor.h/.cpp)
+// Sensor type is selected at runtime via Setup page → ambientSensorType (NVS key "dhtType"):
+//   0 = disabled, 1 = DHT11, 2 = DHT22, 3 = BMP180
+//
+// DHT11/DHT22 use the D6/D7 Grove connector; data line on D7 (GPIO44, UART0 RX).
+// BMP180 is I2C – shares the existing SDA/SCL bus (no extra GPIO needed), addr 0x77.
 #if defined(BOARD_XIAO_SENSE)
   #define DHT_DATA_PIN   44    // D7 = GPIO44
 #else
   #define DHT_DATA_PIN   (-1)  // not assigned for Dev board – define as needed
 #endif
-#define DHT_INTERVAL_MS  5000  // match sensor read rate; DHT11 minimum is 1 s
+#define DHT_INTERVAL_MS   5000  // match sensor read rate; DHT11 minimum is 1 s
+#define BMP180_I2C_ADDR   0x77  // BMP180 default I2C address
+#define BMP280_I2C_ADDR   0x76  // BMP280 default I2C address (SDO→GND); use 0x77 if SDO→VCC
 
 // ASCOM Alpaca Configuration
 #define ALPACA_PORT           11111
@@ -61,7 +65,7 @@
 // Device Information
 #define SERVER_NAME       "SkyConditions_90640"
 #define MANUFACTURER      "Corey Smart"
-#define MANUFACTURER_V    "0.5.0"
+#define MANUFACTURER_V    "0.5.1"
 #define LOCATION          "Observatory"
 #define DEVICE_NAME       "MLX90640 Sky Conditions Sensor"
 #define DESCRIPTION       "ESP32-S3 ASCOM Alpaca ObservingConditions device using MLX90640 thermal camera"
@@ -90,6 +94,7 @@
 #define RAIN_BAUD_RATE       9600
 #define RAIN_MODBUS_ADDR     0x01  // Default slave address per datasheet
 #define RAIN_POLL_MS         5000  // Modbus poll interval (ms)
+
 
 // Preferences Namespace
 #define PREFERENCES_NAMESPACE "skyCond"

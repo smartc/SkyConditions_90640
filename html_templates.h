@@ -125,18 +125,31 @@ inline String getHomePage()
   html += "  <div class='stat-box'><div class='stat-label'>Frame Median</div>"
           "    <div class='stat-value med-temp' id='med-temp'>--</div></div>\n";
   {
-    String ambSrc = (deviceConfig.dhtType && dhtData.valid) ? "DHT" : "MLX die";
+    String ambSrc;
+    if      (deviceConfig.dhtType == 4 && dhtData.valid) ambSrc = "BMP280";
+    else if (deviceConfig.dhtType == 3 && dhtData.valid) ambSrc = "BMP180";
+    else if (deviceConfig.dhtType && dhtData.valid)      ambSrc = "DHT";
+    else                                                  ambSrc = "MLX die";
     html += "  <div class='stat-box'><div class='stat-label'>Ambient<br>"
             "<span style='font-size:0.8em;color:#8899aa' id='amb-src'>" + ambSrc + "</span></div>"
             "    <div class='stat-value amb-temp' id='amb-temp'>" +
             (skyConditions.hasData() ? String(skyConditions.getAmbientTemperature(), 1) + "°C" : "--") +
             "</div></div>\n";
   }
-  if (deviceConfig.dhtType) {
+  if (deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 2) {
+    // Humidity only available from DHT11/DHT22
     String humVal = dhtData.valid ? String(dhtData.humidity, 0) + "%" : "--";
     html += "  <div class='stat-box'><div class='stat-label'>Humidity<br>"
             "<span style='font-size:0.8em;color:#8899aa'>DHT</span></div>"
             "    <div class='stat-value' id='hum-val' style='color:#74b9ff'>" + humVal + "</div></div>\n";
+  }
+  if (deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4) {
+    // Pressure available from BMP180/BMP280
+    const char *presSrc = (deviceConfig.dhtType == 4) ? "BMP280" : "BMP180";
+    String presVal = dhtData.valid ? String(dhtData.pressure, 1) + " hPa" : "--";
+    html += "  <div class='stat-box'><div class='stat-label'>Pressure<br>"
+            "<span style='font-size:0.8em;color:#8899aa'>" + String(presSrc) + "</span></div>"
+            "    <div class='stat-value' id='pres-val' style='color:#74b9ff'>" + presVal + "</div></div>\n";
   }
   html += "  <div class='stat-box'><div class='stat-label'>Cloud Cover<br><span style='font-size:0.8em;color:#74b9ff'>Mean</span></div>"
           "    <div class='stat-value' id='cloud-mean' style='color:#dfe6e9'>" +
@@ -572,19 +585,24 @@ function updateEdge() {
           "<td>Relay: senses relay contact closure via GPIO. "
           "RS485: polls ZTS-3000 via Modbus RTU.</td></tr>\n";
 
-  // ── DHT Ambient Sensor ────────────────────────────────────────────────────
-  html += "<tr><th colspan='3' style='background:#0a2a50'>DHT Ambient Sensor"
+  // ── Ambient Temperature Sensor ───────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Ambient Temperature Sensor"
           " <span style='font-weight:normal;font-size:0.8em;color:#74b9ff'>"
           "(takes effect after reboot)</span></th></tr>\n";
-  html += "<tr><td>DHT Sensor</td><td>";
+  html += "<tr><td>Sensor Type</td><td>";
   html += "<select name='dhtType' style='" + inpStyle + "width:120px;'>";
   html += "<option value='0'" + String(deviceConfig.dhtType == 0 ? " selected" : "") + ">Disabled</option>";
   html += "<option value='1'" + String(deviceConfig.dhtType == 1 ? " selected" : "") + ">DHT11</option>";
   html += "<option value='2'" + String(deviceConfig.dhtType == 2 ? " selected" : "") + ">DHT22</option>";
+  html += "<option value='3'" + String(deviceConfig.dhtType == 3 ? " selected" : "") + ">BMP180</option>";
+  html += "<option value='4'" + String(deviceConfig.dhtType == 4 ? " selected" : "") + ">BMP280</option>";
   html += "</select></td>"
-          "<td>Sensor on D7 (GPIO44). Replaces MLX die temperature with true external ambient "
-          "for cloud-cover calculations, and exposes Humidity via Alpaca. "
-          "DHT11: ±2°C / 1°C res. &nbsp; DHT22: ±0.5°C / 0.1°C res. "
+          "<td>Replaces MLX die temperature with true external ambient for cloud-cover calculations. "
+          "DHT11/DHT22: on D7 (GPIO44), also expose Humidity via Alpaca. "
+          "DHT11: ±2°C. &nbsp; DHT22: ±0.5°C. &nbsp; "
+          "<b>BMP180</b>: ±0.5°C, I2C addr 0x77. &nbsp; "
+          "<b>BMP280</b>: ±0.5°C, I2C addr 0x76 (SDO→GND) or 0x77 (SDO→VCC). "
+          "BMP sensors share the SDA/SCL bus and also show pressure on the home page. "
           "Takes effect after reboot.</td></tr>\n";
 
   // ── Identity ──────────────────────────────────────────────────────────────

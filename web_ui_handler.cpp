@@ -244,7 +244,7 @@ static void handleSaveConfig()
 
   // DHT sensor
   if (webUiServer.hasArg("dhtType"))
-    deviceConfig.dhtType = (uint8_t)constrain(webUiServer.arg("dhtType").toInt(), 0, 2);
+    deviceConfig.dhtType = (uint8_t)constrain(webUiServer.arg("dhtType").toInt(), 0, 4);
   if (webUiServer.hasArg("rainMode"))
     deviceConfig.rainMode = (uint8_t)(webUiServer.arg("rainMode").toInt() != 0 ? 1 : 0);
 
@@ -365,9 +365,12 @@ void broadcastSensorState()
     skyConditions.getLux(),
     skyConditions.getSqm(),
     skyConditions.hasBrightnessData() ? "true" : "false");
-  if (deviceConfig.dhtType && dhtData.valid)
+  if (deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 2 && dhtData.valid)
     len += snprintf(buf + len, sizeof(buf) - len,
                     ",\"dht_hum\":%.1f", dhtData.humidity);
+  if ((deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4) && dhtData.valid)
+    len += snprintf(buf + len, sizeof(buf) - len,
+                    ",\"pressure\":%.1f", dhtData.pressure);
   strncat(buf, "}", sizeof(buf) - len - 1);
   wsServer.broadcastTXT(buf);
 }
