@@ -297,6 +297,18 @@ bool getThermalJpeg(const uint8_t **buf, size_t *len)
   return true;
 }
 
+static void handleConsole()
+{
+  webUiServer.send(200, "text/html", getConsolePage());
+}
+
+static void handleConsoleJSON()
+{
+  String json;
+  logGetJSON(json);
+  webUiServer.send(200, "application/json", json);
+}
+
 static void handleNotFound()
 {
   webUiServer.send(404, "text/plain",
@@ -326,6 +338,8 @@ void initWebUI()
   webUiServer.on("/history.json", HTTP_GET,  handleHistoryJSON);
   webUiServer.on("/thermal.jpg",    HTTP_GET,  handleThermalJpeg);
   webUiServer.on("/thermalmatrix",  HTTP_GET,  handleThermalMatrix);
+  webUiServer.on("/console",      HTTP_GET,  handleConsole);
+  webUiServer.on("/console.json", HTTP_GET,  handleConsoleJSON);
   webUiServer.on("/reset_wifi",   HTTP_POST, handleResetWifi);
   webUiServer.on("/reboot",       HTTP_POST, handleReboot);
   webUiServer.on("/save_config",  HTTP_POST, handleSaveConfig);

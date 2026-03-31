@@ -78,6 +78,7 @@ inline String getNavBar()
     "<a href='/'>Home</a>\n"
     "<a href='/setup'>Setup</a>\n"
     "<a href='/trends'>Trends</a>\n"
+    "<a href='/console'>Console</a>\n"
     "<a href='/update' class='warn'>Update</a>\n"
     "</div>\n";
 }
@@ -907,6 +908,104 @@ function drawChart(id, series, timestamps, nowMs, yUnit) {
 // ── Boot & auto-refresh ────────────────────────────────────────────────────
 loadData();
 setInterval(loadData, 30000);
+</script>
+)rawjs";
+
+  html += "</body></html>";
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// Console page – live debug log viewer
+// ---------------------------------------------------------------------------
+inline String getConsolePage()
+{
+  String html = getPageHeader("Console – " SERVER_NAME);
+  html += getNavBar();
+
+  html +=
+    "<div class='card'>\n"
+    "<h2 style='margin-top:0'>Debug Console</h2>\n"
+    "<div style='margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;'>\n"
+    "  <button id='btn-pause' class='tbtn'>Pause</button>\n"
+    "  <button id='btn-clear' class='tbtn'>Clear</button>\n"
+    "  <button id='btn-copy'  class='tbtn'>Copy</button>\n"
+    "  <span id='con-status' style='font-size:0.8em;color:#636e72'>Polling every 2 s</span>\n"
+    "</div>\n"
+    "<div id='log' style='"
+      "height:520px;overflow-y:auto;background:#0d1117;border-radius:4px;"
+      "padding:10px;font-family:monospace;font-size:0.83em;line-height:1.55;"
+      "white-space:pre-wrap;word-break:break-all;"
+    "'></div>\n"
+    "</div>\n";
+
+  html += R"rawjs(
+<style>
+.le  { margin: 0; }
+.ts  { color: #636e72; user-select: none; }
+.rep { color: #fd79a8; font-style: italic; }
+</style>
+<script>
+function esc(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function fmtMs(ms){
+  var h=Math.floor(ms/3600000),
+      m=Math.floor((ms%3600000)/60000),
+      s=Math.floor((ms%60000)/1000);
+  return [h,m,s].map(function(x){return String(x).padStart(2,'0');}).join(':');
+}
+
+var lastSeq=-1, paused=false;
+
+function render(entries){
+  var el=document.getElementById('log');
+  var atBottom=(el.scrollHeight-el.scrollTop-el.clientHeight)<40;
+  el.innerHTML='';
+  for(var i=0;i<entries.length;i++){
+    var e=entries[i];
+    var rep=e.n>1?' <span class="rep">(\xd7'+e.n+')</span>':'';
+    var d=document.createElement('div');
+    d.className='le';
+    d.innerHTML='<span class="ts">['+fmtMs(e.ms)+']</span> '+esc(e.msg)+rep;
+    el.appendChild(d);
+  }
+  if(atBottom) el.scrollTop=el.scrollHeight;
+}
+
+function poll(){
+  if(paused) return;
+  fetch('/console.json').then(function(r){return r.json();}).then(function(d){
+    if(d.seq!==lastSeq){lastSeq=d.seq;render(d.entries);}
+    document.getElementById('con-status').textContent=
+      'Last update: '+new Date().toLocaleTimeString()+' \u2022 '+d.entries.length+' lines';
+  }).catch(function(){});
+}
+
+document.getElementById('btn-pause').onclick=function(){
+  paused=!paused;
+  this.textContent=paused?'Resume':'Pause';
+  this.style.background=paused?'#c0392b':'';
+};
+document.getElementById('btn-clear').onclick=function(){
+  document.getElementById('log').innerHTML='';
+  lastSeq=-1;
+};
+document.getElementById('btn-copy').onclick=function(){
+  var lines=document.querySelectorAll('#log .le');
+  var text=Array.from(lines).map(function(el){return el.innerText;}).join('\n');
+  var btn=this;
+  navigator.clipboard.writeText(text).then(function(){
+    btn.textContent='Copied!';
+    setTimeout(function(){btn.textContent='Copy';},1500);
+  }).catch(function(){
+    btn.textContent='Failed';
+    setTimeout(function(){btn.textContent='Copy';},1500);
+  });
+};
+
+setInterval(poll,2000);
+poll();
 </script>
 )rawjs";
 
