@@ -83,6 +83,60 @@ BMP180 / BMP280 / BME280 share the existing I2C bus — no extra GPIO needed.
 
 ---
 
+## 3D-Printed Enclosure
+
+The `Enclosure/` directory contains STL files and a master 3MF project for the weatherproof housing.  The design is sized for a **Seeed XIAO ESP32-S3** mounted on the **Grove Expansion Board**.
+
+### Print Files
+
+| File | Material | Notes |
+|------|----------|-------|
+| `Housing - Base.stl` | ASA or PETG | Main enclosure body |
+| `Housing - Top.stl` | ASA or PETG | Lid |
+| `Housing - Bracket.stl` | ASA or PETG | Mounting bracket |
+| `Housing - Bracket Clamp.stl` | ASA or PETG | Bracket clamp |
+| `Housing - Plug.stl` | ASA or PETG | Port plug |
+| `Sensor Insert Plate.stl` | ASA or PETG | Sensor mounting plate |
+| `Stevenson Screen.stl` | ASA or PETG | Stevenson radiation shield (requires supports) |
+| `Stevenson Screen - Base Cap.stl` | ASA or PETG | Base cap for Stevenson screen |
+| `TPU Housing Body Gasket.stl` | TPU | Weatherproof lid seal |
+| `TPU Sensor Insert Gasket.stl` | TPU | Sensor plate seal |
+| `TPU Cable Grommet.stl` | TPU | Cable entry grommet |
+| `Sky Conditions 90640 - Enclosure.3mf` | — | Master 3MF project (all parts, orientations, materials) |
+
+### Assembly Notes
+
+- **Material:** Print structural parts in **ASA** (preferred outdoors) or **PETG**.  Print gaskets and grommets in **TPU**.
+- **Stevenson screen:** Requires supports due to overhangs.
+- **Heatset inserts required:**
+
+  | Size | Location |
+  |------|----------|
+  | M3 | Lid-to-body and bracket fasteners |
+  | M2.5 | PCB/expansion board mounting |
+  | M2 | Sensor plate and smaller internal fasteners |
+
+- **Fasteners:** Matching M3 / M2.5 / M2 socket-head or pan-head screws.
+- **Lens holder:** The Uxcell 20 mm LED lens holder is glued into the top of the housing directly over the TSL2591.
+- **Strain relief:** A 3/8″ PVC strain relief fitting is used for the MLX90640 cable entry.
+
+---
+
+## Bill of Materials
+
+| Component | Part | Notes |
+|-----------|------|-------|
+| Microcontroller | Seeed XIAO ESP32-S3 | |
+| Expansion board | Seeed Grove Expansion Board for XIAO | Provides I2C headers and convenient wiring |
+| Thermal camera | MLX90640 (TO-92 can format) | I2C, 32×24 IR array |
+| Sky brightness | Adafruit TSL2591 | I2C, auto-gain |
+| Rain / snow sensor | Relay-based heated sensor | [AliExpress](https://www.aliexpress.com/item/1005005479538840.html) |
+| Lens holder | Uxcell 20 mm LED lens holder | [Amazon](https://a.co/d/01UBlwtW) — glued over TSL2591 aperture |
+| Strain relief | 3/8″ PVC strain relief fitting | MLX90640 cable entry |
+| Hookup wire | 22–26 AWG | I2C bus, sensor connections |
+
+---
+
 ## Required Libraries
 
 Install via Arduino IDE Library Manager unless noted:
