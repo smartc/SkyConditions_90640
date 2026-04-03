@@ -127,7 +127,8 @@ inline String getHomePage()
           "    <div class='stat-value med-temp' id='med-temp'>--</div></div>\n";
   {
     String ambSrc;
-    if      (deviceConfig.dhtType == 4 && dhtData.valid) ambSrc = "BMP280";
+    if      (deviceConfig.dhtType == 5 && dhtData.valid) ambSrc = "BME280";
+    else if (deviceConfig.dhtType == 4 && dhtData.valid) ambSrc = "BMP280";
     else if (deviceConfig.dhtType == 3 && dhtData.valid) ambSrc = "BMP180";
     else if (deviceConfig.dhtType && dhtData.valid)      ambSrc = "DHT";
     else                                                  ambSrc = "MLX die";
@@ -137,16 +138,18 @@ inline String getHomePage()
             (skyConditions.hasData() ? String(skyConditions.getAmbientTemperature(), 1) + "°C" : "--") +
             "</div></div>\n";
   }
-  if (deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 2) {
-    // Humidity only available from DHT11/DHT22
+  if ((deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 2) || deviceConfig.dhtType == 5) {
+    // Humidity available from DHT11/DHT22 and BME280
+    const char *humSrc = (deviceConfig.dhtType == 5) ? "BME280" : "DHT";
     String humVal = dhtData.valid ? String(dhtData.humidity, 0) + "%" : "--";
     html += "  <div class='stat-box'><div class='stat-label'>Humidity<br>"
-            "<span style='font-size:0.8em;color:#8899aa'>DHT</span></div>"
+            "<span style='font-size:0.8em;color:#8899aa'>" + String(humSrc) + "</span></div>"
             "    <div class='stat-value' id='hum-val' style='color:#74b9ff'>" + humVal + "</div></div>\n";
   }
-  if (deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4) {
-    // Pressure available from BMP180/BMP280
-    const char *presSrc = (deviceConfig.dhtType == 4) ? "BMP280" : "BMP180";
+  if (deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4 || deviceConfig.dhtType == 5) {
+    // Pressure available from BMP180/BMP280/BME280
+    const char *presSrc = (deviceConfig.dhtType == 5) ? "BME280"
+                        : (deviceConfig.dhtType == 4) ? "BMP280" : "BMP180";
     String presVal = dhtData.valid ? String(dhtData.pressure, 1) + " hPa" : "--";
     html += "  <div class='stat-box'><div class='stat-label'>Pressure<br>"
             "<span style='font-size:0.8em;color:#8899aa'>" + String(presSrc) + "</span></div>"
@@ -224,6 +227,26 @@ inline String getHomePage()
   // ---------------------------------------------------------------------------
   // JavaScript – WebSocket client + jet colormap renderer
   // ---------------------------------------------------------------------------
+
+  // Compute the box region that matches the per-pixel cloud cover region.
+  // Both cloud cover methods are always computed; the box always tracks the
+  // per-pixel region (which equals center FOV when cloudPixelRegion == 0).
+  int boxCCS, boxCCE, boxCRS, boxCRE;
+  if (deviceConfig.cloudPixelRegion == 1) {
+    int edge = (int)deviceConfig.cloudEdgeExclude;
+    boxCCS = edge;
+    boxCCE = SENSOR_COLS - 1 - edge;
+    boxCRS = edge;
+    boxCRE = SENSOR_ROWS - 1 - edge;
+    if (boxCRS > boxCRE || boxCCS > boxCCE) { // degenerate – fall back
+      boxCCS = CENTER_COL_START; boxCCE = CENTER_COL_END;
+      boxCRS = CENTER_ROW_START; boxCRE = CENTER_ROW_END;
+    }
+  } else {
+    boxCCS = CENTER_COL_START; boxCCE = CENTER_COL_END;
+    boxCRS = CENTER_ROW_START; boxCRE = CENTER_ROW_END;
+  }
+
   html += R"rawjs(
 <script>
 const COLS = 32, ROWS = 24, PIXELS = 768;
@@ -256,6 +279,10 @@ function fmtLux(lux) {
   if (lux >= 0.001) return lux.toFixed(4)       + ' lux';
   return lux.toExponential(2) + ' lux';
 }
+
+// Pre-allocate the offscreen source canvas; reused every frame to avoid GC churn.
+const srcCanvas = new OffscreenCanvas(COLS, ROWS);
+const srcCtx    = srcCanvas.getContext('2d');
 
 let ws, fpsCount = 0, lastFpsTime = Date.now(), fps = 0;
 
@@ -315,17 +342,18 @@ function connect() {
       imgData.data[i*4+3] = 255;
     }
 
-    // Scale 32×24 → 640×480 using an offscreen canvas
-    const tmp = new OffscreenCanvas(COLS, ROWS);
-    tmp.getContext('2d').putImageData(imgData, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+    // Scale 32×24 → 640×480 with bicubic interpolation to smooth pixels and
+    // reduce MLX90640 row/column banding artifacts in the live view.
+    srcCtx.putImageData(imgData, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(srcCanvas, 0, 0, canvas.width, canvas.height);
 
-    // Draw center-FOV box
-    const ccs = )rawjs" + String(CENTER_COL_START) + R"rawjs(,
-          cce = )rawjs" + String(CENTER_COL_END + 1) + R"rawjs(,
-          crs = )rawjs" + String(CENTER_ROW_START) + R"rawjs(,
-          cre = )rawjs" + String(CENTER_ROW_END + 1) + R"rawjs(;
+    // Draw cloud cover region box
+    const ccs = )rawjs" + String(boxCCS) + R"rawjs(,
+          cce = )rawjs" + String(boxCCE + 1) + R"rawjs(,
+          crs = )rawjs" + String(boxCRS) + R"rawjs(,
+          cre = )rawjs" + String(boxCRE + 1) + R"rawjs(;
     const scaleX = canvas.width  / COLS;
     const scaleY = canvas.height / ROWS;
     ctx.strokeStyle = 'rgba(255,60,60,0.85)';
@@ -591,19 +619,30 @@ function updateEdge() {
           " <span style='font-weight:normal;font-size:0.8em;color:#74b9ff'>"
           "(takes effect after reboot)</span></th></tr>\n";
   html += "<tr><td>Sensor Type</td><td>";
-  html += "<select name='dhtType' style='" + inpStyle + "width:120px;'>";
+  html += "<select name='dhtType' style='" + inpStyle + "width:120px;'"
+          " onchange=\"var s=(this.value=='4'||this.value=='5');document.getElementById('bmp280AddrRow').style.display=(s?'':'none')\">";
   html += "<option value='0'" + String(deviceConfig.dhtType == 0 ? " selected" : "") + ">Disabled</option>";
   html += "<option value='1'" + String(deviceConfig.dhtType == 1 ? " selected" : "") + ">DHT11</option>";
   html += "<option value='2'" + String(deviceConfig.dhtType == 2 ? " selected" : "") + ">DHT22</option>";
   html += "<option value='3'" + String(deviceConfig.dhtType == 3 ? " selected" : "") + ">BMP180</option>";
   html += "<option value='4'" + String(deviceConfig.dhtType == 4 ? " selected" : "") + ">BMP280</option>";
+  html += "<option value='5'" + String(deviceConfig.dhtType == 5 ? " selected" : "") + ">BME280</option>";
   html += "</select></td>"
           "<td>Replaces MLX die temperature with true external ambient for cloud-cover calculations. "
           "DHT11/DHT22: on D7 (GPIO44), also expose Humidity via Alpaca. "
           "DHT11: ±2°C. &nbsp; DHT22: ±0.5°C. &nbsp; "
           "<b>BMP180</b>: ±0.5°C, I2C addr 0x77. &nbsp; "
-          "<b>BMP280</b>: ±0.5°C, I2C addr 0x76 (SDO→GND) or 0x77 (SDO→VCC). "
-          "BMP sensors share the SDA/SCL bus and also show pressure on the home page. "
+          "<b>BMP280</b>: ±0.5°C, temp+pressure, I2C addr selectable below. &nbsp; "
+          "<b>BME280</b>: ±0.5°C, temp+pressure+humidity, I2C addr selectable below. "
+          "BMP/BME sensors share the SDA/SCL bus. Takes effect after reboot.</td></tr>\n";
+  html += "<tr id='bmp280AddrRow' style='" + String((deviceConfig.dhtType == 4 || deviceConfig.dhtType == 5) ? "" : "display:none;") + "'>";
+  html += "<td>BMP280 Address</td><td>";
+  html += "<select name='bmp280Addr' style='" + inpStyle + "width:120px;'>";
+  html += "<option value='118'" + String(deviceConfig.bmp280Addr == 0x76 ? " selected" : "") + ">0x76 (SDO&rarr;GND)</option>";
+  html += "<option value='119'" + String(deviceConfig.bmp280Addr == 0x77 ? " selected" : "") + ">0x77 (SDO&rarr;VCC)</option>";
+  html += "</select></td>"
+          "<td>SDO pin tied to GND &rarr; 0x76 (common default). "
+          "SDO pin tied to VCC &rarr; 0x77. Check your module's silkscreen or datasheet. "
           "Takes effect after reboot.</td></tr>\n";
 
   // ── Identity ──────────────────────────────────────────────────────────────
@@ -664,27 +703,93 @@ function updateEdge() {
   html += "</form>\n";
   html += "</div>\n";
 
-  // WiFi reset
+  // WiFi
   html += "<div class='card'>\n";
   html += "<h2>WiFi</h2>\n";
-  html += "<p>SSID: <strong>" + WiFi.SSID() + "</strong> &nbsp; IP: <strong>" +
-          WiFi.localIP().toString() + "</strong></p>\n";
-  html += "<button class='btn btn-danger' onclick='resetWifi()'>Reset WiFi Settings</button>\n";
-  html += "<script>\n";
-  html += "function resetWifi() {\n";
-  html += "  if (!confirm('Reset WiFi? The device will restart and create a setup AP.')) return;\n";
-  html += "  fetch('/reset_wifi', { method:'POST' })\n";
-  html += "    .then(() => alert('Resetting. Connect to WiFi AP: SkyCond-Setup'))\n";
-  html += "    .catch(() => alert('Request sent'));\n";
-  html += "}\n";
-  html += "function rebootDevice() {\n";
-  html += "  if (!confirm('Reboot the device?')) return;\n";
-  html += "  fetch('/reboot', { method:'POST' })\n";
-  html += "    .then(() => alert('Rebooting. Page will reload in 10 seconds.'))\n";
-  html += "    .catch(() => alert('Request sent'));\n";
-  html += "  setTimeout(() => location.reload(), 10000);\n";
-  html += "}\n";
-  html += "</script>\n";
+  html += "<p>SSID: <strong>" + WiFi.SSID() + "</strong> &nbsp;"
+          " IP: <strong>" + WiFi.localIP().toString() + "</strong> &nbsp;"
+          " Signal: <strong>" + String(WiFi.RSSI()) + " dBm</strong></p>\n";
+
+  // Scan + connect form
+  html += "<div style='margin-bottom:10px'>\n";
+  html += "  <button id='wifi-scan-btn' class='btn' style='background:#0f3460'"
+          " onclick='wifiScan()'>Scan for Networks</button>\n";
+  html += "  <select id='wifi-sel' style='display:none;margin-left:8px;" +
+          inpStyle + "width:250px' onchange='wifiSelChanged()'>"
+          "<option value=''>-- select --</option></select>\n";
+  html += "</div>\n";
+  html += "<div style='margin-bottom:8px'>\n";
+  html += "  <label style='display:inline-block;width:80px'>SSID</label>"
+          "<input type='text' id='wifi-ssid' style='" + inpStyle + "width:250px'"
+          " placeholder='Network name'>\n";
+  html += "</div>\n";
+  html += "<div style='margin-bottom:12px'>\n";
+  html += "  <label style='display:inline-block;width:80px'>Password</label>"
+          "<input type='password' id='wifi-pass' style='" + inpStyle + "width:250px'"
+          " placeholder='Leave blank if open'>\n";
+  html += "</div>\n";
+  html += "<button class='btn' style='background:#0f3460' onclick='wifiConnect()'>Change WiFi</button>"
+          " <span id='wifi-msg' style='font-size:0.9em;margin-left:8px'></span>\n";
+
+  html += "<hr style='margin:16px 0;border-color:#1e3a5f'>\n";
+  html += "<button class='btn btn-danger' onclick='resetWifi()'>Reset WiFi Settings</button>"
+          " <span style='font-size:0.8em;color:#636e72;margin-left:8px'>"
+          "Clears credentials and reboots into setup AP (SkyCond-Setup)</span>\n";
+
+  html += R"rawwifi(
+<script>
+async function wifiScan() {
+  const btn = document.getElementById('wifi-scan-btn');
+  btn.textContent = 'Scanning\u2026'; btn.disabled = true;
+  try {
+    const nets = await fetch('/wifi/scan').then(r => r.json());
+    const sel = document.getElementById('wifi-sel');
+    sel.innerHTML = '<option value="">-- select --</option>';
+    nets.sort((a,b) => b.rssi - a.rssi).forEach(n => {
+      const o = document.createElement('option');
+      o.value = n.ssid;
+      o.textContent = n.ssid + '  (' + n.rssi + ' dBm' + (n.open ? ', open' : '') + ')';
+      sel.appendChild(o);
+    });
+    sel.style.display = '';
+  } catch(e) { alert('Scan failed – try again'); }
+  btn.textContent = 'Scan for Networks'; btn.disabled = false;
+}
+function wifiSelChanged() {
+  const v = document.getElementById('wifi-sel').value;
+  if (v) document.getElementById('wifi-ssid').value = v;
+}
+async function wifiConnect() {
+  const ssid = document.getElementById('wifi-ssid').value.trim();
+  const pass = document.getElementById('wifi-pass').value;
+  const msg  = document.getElementById('wifi-msg');
+  if (!ssid) { msg.textContent = 'Enter an SSID.'; return; }
+  if (!confirm('Connect to "' + ssid + '"?\nThe device will reconnect – your browser connection may be briefly interrupted.')) return;
+  msg.textContent = 'Connecting\u2026';
+  try {
+    await fetch('/wifi/connect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'ssid=' + encodeURIComponent(ssid) + '&password=' + encodeURIComponent(pass)
+    });
+  } catch(e) {}
+  msg.textContent = 'Connecting to "' + ssid + '"\u2026 If the IP changes, reconnect at the new address. If it fails, use Reset WiFi Settings below.';
+}
+function resetWifi() {
+  if (!confirm('Reset WiFi? The device will restart and create a setup AP.')) return;
+  fetch('/reset_wifi', {method:'POST'})
+    .then(() => alert('Resetting. Connect to WiFi AP: SkyCond-Setup'))
+    .catch(() => alert('Request sent'));
+}
+function rebootDevice() {
+  if (!confirm('Reboot the device?')) return;
+  fetch('/reboot', {method:'POST'})
+    .then(() => alert('Rebooting. Page will reload in 10 seconds.'))
+    .catch(() => alert('Request sent'));
+  setTimeout(() => location.reload(), 10000);
+}
+</script>
+)rawwifi";
   html += "</div>\n";
 
   // Reboot

@@ -155,6 +155,39 @@ static void handleResetWifi()
   ESP.restart();
 }
 
+static void handleWifiScan()
+{
+  // Synchronous scan – blocks ~2-3 s; acceptable for a one-off setup operation.
+  int n = WiFi.scanNetworks();
+  String json = "[";
+  for (int i = 0; i < n && i < 20; i++) {
+    if (i > 0) json += ",";
+    String ssid = WiFi.SSID(i);
+    ssid.replace("\\", "\\\\");
+    ssid.replace("\"", "\\\"");
+    json += "{\"ssid\":\"" + ssid + "\",\"rssi\":" +
+            String(WiFi.RSSI(i)) + ",\"open\":" +
+            String(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "true" : "false") + "}";
+  }
+  json += "]";
+  WiFi.scanDelete();
+  webUiServer.send(200, "application/json", json);
+}
+
+static void handleWifiConnect()
+{
+  String ssid = webUiServer.arg("ssid");
+  String pass = webUiServer.arg("password");
+  if (ssid.isEmpty()) {
+    webUiServer.send(400, "text/plain", "SSID required");
+    return;
+  }
+  Debug.printf("WiFi reconnect requested: SSID=%s\n", ssid.c_str());
+  webUiServer.send(200, "text/plain", "ok");
+  delay(500);  // let response flush before WiFi state changes
+  WiFi.begin(ssid.c_str(), pass.c_str());
+}
+
 static void handleReboot()
 {
   webUiServer.send(200, "text/plain", "Rebooting...");
@@ -242,9 +275,13 @@ static void handleSaveConfig()
   // Rain sensor
   deviceConfig.rainEnabled = webUiServer.hasArg("rainEnabled");
 
-  // DHT sensor
+  // DHT / BMP sensor
   if (webUiServer.hasArg("dhtType"))
-    deviceConfig.dhtType = (uint8_t)constrain(webUiServer.arg("dhtType").toInt(), 0, 4);
+    deviceConfig.dhtType = (uint8_t)constrain(webUiServer.arg("dhtType").toInt(), 0, 5);
+  if (webUiServer.hasArg("bmp280Addr")) {
+    uint8_t a = (uint8_t)webUiServer.arg("bmp280Addr").toInt();  // 118=0x76, 119=0x77
+    if (a == 0x76 || a == 0x77) deviceConfig.bmp280Addr = a;
+  }
   if (webUiServer.hasArg("rainMode"))
     deviceConfig.rainMode = (uint8_t)(webUiServer.arg("rainMode").toInt() != 0 ? 1 : 0);
 
@@ -341,6 +378,8 @@ void initWebUI()
   webUiServer.on("/console",      HTTP_GET,  handleConsole);
   webUiServer.on("/console.json", HTTP_GET,  handleConsoleJSON);
   webUiServer.on("/reset_wifi",   HTTP_POST, handleResetWifi);
+  webUiServer.on("/wifi/scan",    HTTP_GET,  handleWifiScan);
+  webUiServer.on("/wifi/connect", HTTP_POST, handleWifiConnect);
   webUiServer.on("/reboot",       HTTP_POST, handleReboot);
   webUiServer.on("/save_config",  HTTP_POST, handleSaveConfig);
   webUiServer.onNotFound(handleNotFound);
@@ -379,10 +418,10 @@ void broadcastSensorState()
     skyConditions.getLux(),
     skyConditions.getSqm(),
     skyConditions.hasBrightnessData() ? "true" : "false");
-  if (deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 2 && dhtData.valid)
+  if (((deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 2) || deviceConfig.dhtType == 5) && dhtData.valid)
     len += snprintf(buf + len, sizeof(buf) - len,
                     ",\"dht_hum\":%.1f", dhtData.humidity);
-  if ((deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4) && dhtData.valid)
+  if ((deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4 || deviceConfig.dhtType == 5) && dhtData.valid)
     len += snprintf(buf + len, sizeof(buf) - len,
                     ",\"pressure\":%.1f", dhtData.pressure);
   strncat(buf, "}", sizeof(buf) - len - 1);

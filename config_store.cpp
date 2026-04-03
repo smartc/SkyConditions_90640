@@ -58,9 +58,11 @@ void configLoad(DeviceConfig &cfg)
   cfg.rainMode           = prefs.getUChar("rainMode",    0);     // default: Relay
   cfg.rainEnabled        = prefs.getBool ("rainEn",      true);  // default: enabled
 
-  // Ambient sensor (0=disabled, 1=DHT11, 2=DHT22, 3=BMP180, 4=BMP280)
+  // Ambient sensor (0=disabled, 1=DHT11, 2=DHT22, 3=BMP180, 4=BMP280, 5=BME280)
   cfg.dhtType            = prefs.getUChar("dhtType",     0);     // default: disabled
-  if (cfg.dhtType > 4) cfg.dhtType = 0;                          // clamp unknown values
+  if (cfg.dhtType > 5) cfg.dhtType = 0;                          // clamp unknown values
+  cfg.bmp280Addr         = prefs.getUChar("bmp280Addr",  0x76);  // default: SDO→GND
+  if (cfg.bmp280Addr != 0x76 && cfg.bmp280Addr != 0x77) cfg.bmp280Addr = 0x76;
 
   prefs.end();
 }
@@ -92,6 +94,7 @@ void configSave(const DeviceConfig &cfg)
   prefs.putUChar ("rainMode",    cfg.rainMode);
   prefs.putBool  ("rainEn",      cfg.rainEnabled);
   prefs.putUChar ("dhtType",     cfg.dhtType);
+  prefs.putUChar ("bmp280Addr",  cfg.bmp280Addr);
 
   prefs.end();
 }

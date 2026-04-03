@@ -439,8 +439,9 @@ static void handleGetSensorDescription()
 
 static void handleGetHumidity()
 {
-  // Humidity only from DHT11/DHT22; BMP180 (type 3) has no humidity sensor
-  if (deviceConfig.dhtType < 1 || deviceConfig.dhtType > 2 || !dhtData.valid) { sendNotImplemented(); return; }
+  // Humidity from DHT11/DHT22 (types 1-2) or BME280 (type 5); BMP180/BMP280 have no humidity
+  bool hasHumidity = ((deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 2) || deviceConfig.dhtType == 5);
+  if (!hasHumidity || !dhtData.valid) { sendNotImplemented(); return; }
   StaticJsonDocument<256> json;
   json["Value"] = round(dhtData.humidity * 10.0) / 10.0;
   sendJSON(json);

@@ -26,6 +26,11 @@ static bool bmp180Ready = false;
 static Adafruit_BMP280 bmp280;
 static bool bmp280Ready = false;
 
+// ── BME280 (type 5) ──────────────────────────────────────────────────────────
+#include <Adafruit_BME280.h>
+static Adafruit_BME280 bme280;
+static bool bme280Ready = false;
+
 DhtData dhtData = {};
 
 void dhtSetup()
@@ -43,14 +48,36 @@ void dhtSetup()
   }
 
   if (deviceConfig.dhtType == 4) {
-    // BMP280 – I2C, shares the existing bus; default addr 0x76 (SDO→GND) or 0x77 (SDO→VCC)
-    if (bmp280.begin(BMP280_I2C_ADDR)) {
+    // BMP280 – I2C, shares the existing bus; addr set at runtime (0x76 SDO→GND, 0x77 SDO→VCC)
+    if (bmp280.begin(deviceConfig.bmp280Addr)) {
       bmp280Ready = true;
       Debug.printf("[BMP280] found at 0x%02X – interval %d ms\n",
-                   BMP280_I2C_ADDR, DHT_INTERVAL_MS);
+                   deviceConfig.bmp280Addr, DHT_INTERVAL_MS);
     } else {
       Debug.printf("[BMP280] not found at 0x%02X – check wiring / SDO pin\n",
-                   BMP280_I2C_ADDR);
+                   deviceConfig.bmp280Addr);
+    }
+    return;
+  }
+
+  if (deviceConfig.dhtType == 5) {
+    // BME280 – I2C, shares the existing bus; same address options as BMP280.
+    // Explicit setSampling() is required: ctrl_hum must be written before
+    // ctrl_meas, and some Adafruit library versions leave humidity oversampling
+    // unset when relying solely on begin()'s internal defaults.
+    if (bme280.begin(deviceConfig.bmp280Addr)) {
+      bme280.setSampling(Adafruit_BME280::MODE_NORMAL,
+                         Adafruit_BME280::SAMPLING_X2,   // temperature
+                         Adafruit_BME280::SAMPLING_X16,  // pressure
+                         Adafruit_BME280::SAMPLING_X1,   // humidity
+                         Adafruit_BME280::FILTER_X16,
+                         Adafruit_BME280::STANDBY_MS_0_5);
+      bme280Ready = true;
+      Debug.printf("[BME280] found at 0x%02X – interval %d ms\n",
+                   deviceConfig.bmp280Addr, DHT_INTERVAL_MS);
+    } else {
+      Debug.printf("[BME280] not found at 0x%02X – check wiring / SDO pin\n",
+                   deviceConfig.bmp280Addr);
     }
     return;
   }
@@ -117,6 +144,31 @@ void dhtLoop()
         Debug.printf("[BMP280] T=%.1f°C  P=%.1f hPa\n", t, p);
     } else {
       if (dhtData.valid) Debug.println("[BMP280] read failed");
+      dhtData.valid = false;
+    }
+    return;
+  }
+
+  // ── BME280 path ──────────────────────────────────────────────────────────
+  if (deviceConfig.dhtType == 5) {
+    if (!bme280Ready) return;
+    float t = bme280.readTemperature();
+    float p = bme280.readPressure() / 100.0f;  // Pa → hPa
+    float h = bme280.readHumidity();
+
+    if (!isnan(t) && p > 0.0f && !isnan(h)) {
+      bool changed = (!dhtData.valid
+                      || fabsf(t - dhtData.temperature) >= 0.1f
+                      || fabsf(p - dhtData.pressure)    >= 0.5f
+                      || fabsf(h - dhtData.humidity)    >= 1.0f);
+      dhtData.temperature = t;
+      dhtData.pressure    = p;
+      dhtData.humidity    = h;
+      dhtData.valid       = true;
+      if (changed)
+        Debug.printf("[BME280] T=%.1f°C  P=%.1f hPa  RH=%.0f%%\n", t, p, h);
+    } else {
+      if (dhtData.valid) Debug.println("[BME280] read failed");
       dhtData.valid = false;
     }
     return;

@@ -23,6 +23,10 @@ No CLI build system — use Arduino IDE or `arduino-cli`.
 |---------|--------|
 | Adafruit MLX90640 | Library Manager |
 | Adafruit TSL2591 | Library Manager |
+| Adafruit BMP085 Unified | Library Manager (BMP180 support) |
+| Adafruit BMP280 | Library Manager (BMP280 support) |
+| Adafruit BME280 | Library Manager (BME280 support) |
+| DHT sensor library (Adafruit) | Library Manager |
 | WiFiManager (tzapu) | Library Manager |
 | arduinoWebSockets (Markus Sattler) | Library Manager |
 | ElegantOTA | Library Manager |
@@ -47,6 +51,8 @@ The ASCOM Alpaca protocol is implemented directly using the Arduino `WebServer` 
 | `html_templates.h` | Inline HTML/CSS/JS generators for home, trends, and setup pages |
 | `history.h/.cpp` | Dual-resolution history ring buffers (30 s / 15 min buckets) |
 | `mqtt_handler.h/.cpp` | MQTT client + Home Assistant autodiscovery (PubSubClient) |
+| `dht_sensor.h/.cpp` | Optional ambient sensor: DHT11/22, BMP180, BMP280, BME280 |
+| `rain_sensor.h/.cpp` | Two-pin relay rain/snow detection |
 | `PubSubClient.h/.cpp` | Bundled MQTT client library (copied from ror_controller) |
 
 ### Communication Stack
@@ -144,6 +150,13 @@ All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (
 | `mqttUser` | `mqttUser` | "" |
 | `mqttPassword` | `mqttPass` | "" |
 | `mqttTopicPrefix` | `mqttTopicPfx` | "skyconditions" (+ MAC suffix if unchanged) |
+| `cloudCoverMethod` | `cloudMethod` | 0 (mean) |
+| `cloudPixelRegion` | `cloudPxRgn` | 0 (center FOV) |
+| `cloudEdgeExclude` | `cloudEdge` | 2 px |
+| `rainMode` | `rainMode` | 0 (relay) |
+| `rainEnabled` | `rainEn` | true |
+| `dhtType` | `dhtType` | 0 (disabled); 1=DHT11, 2=DHT22, 3=BMP180, 4=BMP280, 5=BME280 |
+| `bmp280Addr` | `bmp280Addr` | 0x76 |
 
 ### NTP
 
@@ -162,7 +175,7 @@ Implemented in `mqtt_handler.h/.cpp` using the bundled PubSubClient library.
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.3.1"
+  "ip": "192.168.x.x",  "version": "0.5.3"
 }
 ```
 
@@ -188,6 +201,8 @@ Implemented in `mqtt_handler.h/.cpp` using the bundled PubSubClient library.
 ## WiFi
 
 Credentials managed by WiFiManager.  On first boot (or after `POST /reset_wifi`) the device creates captive portal AP **SkyCond-Setup** (password: `skycond123`).
+
+To change the network without a full reset: `GET /wifi/scan` returns a JSON array of nearby APs; `POST /wifi/connect` (fields: `ssid`, `password`) calls `WiFi.begin()` which persists credentials to NVS, then reconnects in place.  On next reboot `autoConnect()` uses the updated credentials.
 
 ## CONFORM Status
 

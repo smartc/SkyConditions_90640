@@ -2,14 +2,14 @@
 
 ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 infrared thermal camera and TSL2591 sky brightness sensor.  Provides a fully standards-compliant Alpaca API for sky temperature, cloud cover, sky brightness, and sky quality monitoring — plus a live thermal viewer and trend charts in the browser.
 
-**Current version: 0.5.0**
+**Current version: 0.5.3**
 
 ---
 
 ## Features
 
 - **ASCOM Alpaca ObservingConditions** (device 0, port 11111, Interface v1)
-  - SkyTemperature, Temperature, CloudCover, SkyBrightness, SkyQuality, Humidity (when DHT enabled)
+  - SkyTemperature, Temperature, CloudCover, SkyBrightness, SkyQuality, Humidity (when DHT/BME280 enabled)
   - TimeSinceLastUpdate (all sensors, including LatestUpdateTime via empty SensorName)
   - SensorDescription, AveragePeriod, Refresh
 - **ASCOM Alpaca SafetyMonitor** (device 0, port 11111, Interface v1)
@@ -21,18 +21,20 @@ ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 in
   - *Mean method*: linear interpolation on the center-FOV average ambient−sky delta
   - *Per-pixel method*: per-pixel interpolation across a configurable region, then averaged
   - Both methods trended simultaneously; Setup page toggle selects which value is reported to Alpaca
+  - Live thermal view bounding box tracks the configured per-pixel region
 - **Optional rain / snow sensor** — two-pin relay detection; relay closure = wet
-- **Optional DHT ambient sensor** — DHT11 or DHT22, runtime-selectable; replaces MLX90640 die temp as ambient reference for cloud cover calculations (die temp runs high due to self-heating)
+- **Optional ambient sensor** — runtime-selectable: DHT11, DHT22, BMP180, BMP280, or BME280; replaces MLX90640 die temp as ambient reference for cloud cover calculations
 - **MQTT / Home Assistant autodiscovery** — publishes all sensor values + thermal thumbnail; HA entities created automatically on connect
 - **ClearDarkSky colormap** for the thermal heatmap — dark navy (clear/cold) through white (overcast/warm), anchored to calibration thresholds
-- **Live thermal WebSocket stream** on port 81 — 784-byte binary frames at 2 Hz
+- **Live thermal WebSocket stream** on port 81 — 784-byte binary frames at 2 Hz, bicubic-smoothed in the browser
 - **Browser UI** on port 80
   - Home page: current readings, live thermal image, dual cloud cover values, brightness, rain status, humidity
   - Trends page: 60-min and 24-h charts for all sensors
-  - Setup page: full calibration, sensor enable/type selection, MQTT, NTP, network settings
+  - Setup page: full calibration, sensor enable/type selection, MQTT, NTP, network settings, WiFi scan & reconnect
+  - Debug console (`/console`): live serial log with deduplication and copy button
 - **Raw thermal matrix endpoint** — `GET /thermalmatrix` returns the full 32×24 temperature array as JSON
 - **OTA firmware updates** via ElegantOTA at `/update`
-- **WiFiManager** captive portal for first-boot WiFi setup
+- **WiFi management** — scan for networks and reconnect without a full credential reset (Setup page → WiFi)
 - **History ring buffers**: 30-second buckets (60 min hi-res) + 15-minute buckets (24 h lo-res)
 - Persistent configuration in NVS flash (survives reboots)
 - Passes ASCOM Conform Universal 4.2.1 with **0 errors, 0 issues** on all three devices
@@ -56,6 +58,7 @@ Enable **PSRAM** in board settings — the thermal JPEG staging buffer requires 
 |-----------|------|-------------|
 | Thermal camera | Melexis MLX90640 32×24 IR array | 0x33 |
 | Sky brightness | AMS TSL2591 | 0x29 |
+| Ambient (optional) | DHT11 / DHT22 / BMP180 / BMP280 / BME280 | GPIO or I2C |
 
 ### Wiring (XIAO ESP32-S3 Sense + Grove Shield)
 
@@ -68,6 +71,8 @@ Enable **PSRAM** in board settings — the thermal JPEG staging buffer requires 
 | DHT data | D7 | GPIO 44 |
 
 The rain sensor uses two pins: drive pin is held OUTPUT HIGH; relay closure pulls the sense pin HIGH (INPUT_PULLDOWN).  No external components required.
+
+BMP180 / BMP280 / BME280 share the existing I2C bus — no extra GPIO needed.
 
 ### Wiring (ESP32-S3 Dev Module)
 
@@ -86,6 +91,9 @@ Install via Arduino IDE Library Manager unless noted:
 |---------|--------|
 | Adafruit MLX90640 | Library Manager |
 | Adafruit TSL2591 | Library Manager |
+| Adafruit BMP085 Unified | Library Manager (BMP180 support) |
+| Adafruit BMP280 | Library Manager (BMP280 support) |
+| Adafruit BME280 | Library Manager (BME280 support) |
 | DHT sensor library (Adafruit) | Library Manager |
 | WiFiManager (tzapu) | Library Manager |
 | arduinoWebSockets (Markus Sattler) | Library Manager |
@@ -107,12 +115,14 @@ Install via Arduino IDE Library Manager unless noted:
 
 ## First Boot / WiFi Setup
 
-On first boot (or after navigating to `/reset_wifi`) the device creates a captive-portal access point:
+On first boot (or after a full WiFi reset) the device creates a captive-portal access point:
 
 - **SSID:** `SkyCond-Setup`
 - **Password:** `skycond123`
 
 Connect, choose your home network, and the device restarts and joins it.  The assigned IP is shown on the serial monitor.
+
+To change the WiFi network without a full reset, use **Setup → WiFi → Scan for Networks**, select the target AP, enter the password, and click **Change WiFi**.  The device reconnects in place; credentials are persisted to NVS.
 
 ---
 
@@ -125,11 +135,11 @@ All three devices are served on port **11111**.  Setup/UI URLs on port 11111 red
 | ASCOM Property | Source | Notes |
 |----------------|--------|-------|
 | `SkyTemperature` | MLX90640 | Average of center 16×12 (192) pixels |
-| `Temperature` | MLX90640 / DHT | Die temp, or DHT reading when DHT is enabled and valid |
+| `Temperature` | MLX90640 / ambient sensor | Die temp, or ambient sensor reading when enabled and valid |
 | `CloudCover` | MLX90640 | Configurable: mean or per-pixel method (Setup page) |
 | `SkyBrightness` | TSL2591 | Broadband lux with auto-gain |
 | `SkyQuality` | TSL2591 | mag/arcsec² from SQM formula |
-| `Humidity` | DHT | %RH — only implemented when DHT sensor is enabled |
+| `Humidity` | DHT / BME280 | %RH — only implemented when a humidity-capable sensor is enabled |
 
 DewPoint, Pressure, RainRate, StarFWHM, WindDirection, WindGust, WindSpeed return `NotImplementedException`.
 
@@ -160,11 +170,14 @@ UDP discovery (port 32227) runs in a dedicated FreeRTOS task pinned to Core 0 so
 | `http://<ip>/` | Live status: temperatures, cloud cover, lux/SQM, rain, humidity, thermal image |
 | `http://<ip>/trends` | 60-min and 24-h trend charts |
 | `http://<ip>/setup` | Configuration form |
+| `http://<ip>/console` | Live serial debug console |
 | `http://<ip>/thermal.jpg` | Latest thermal JPEG snapshot |
 | `http://<ip>/thermalmatrix` | Raw 32×24 temperature matrix as JSON |
 | `http://<ip>/history.json?minutes=N` | Raw history JSON (N = 5–1440) |
 | `http://<ip>/update` | ElegantOTA firmware update |
-| `http://<ip>/reset_wifi` | Clear WiFi credentials and restart |
+| `http://<ip>/wifi/scan` | GET — JSON array of nearby WiFi networks |
+| `http://<ip>/wifi/connect` | POST (ssid, password) — reconnect without credential reset |
+| `http://<ip>/reset_wifi` | POST — clear WiFi credentials and restart |
 
 WebSocket live stream: `ws://<ip>:81` — 784-byte binary frames (see below).
 
@@ -194,7 +207,7 @@ Enable in Setup → MQTT.  The device publishes to `<prefix>/state` every 30 sec
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.5.0"
+  "ip": "192.168.x.x",  "version": "0.5.3"
 }
 ```
 
@@ -214,7 +227,7 @@ Two methods run on every frame and are trended independently:
 
 Region options (Setup page): *Centre FOV* (192 pixels) or *Full Frame* with a configurable edge exclusion border.
 
-The **Cloud Cover Method** toggle on the Setup page selects which value is reported to ASCOM Alpaca.  Both are always shown on the home page and in trend charts.
+The **Cloud Cover Method** toggle on the Setup page selects which value is reported to ASCOM Alpaca.  Both are always shown on the home page and in trend charts.  The red bounding box in the live thermal view tracks the per-pixel region.
 
 ---
 
@@ -230,7 +243,7 @@ The **Cloud Cover Method** toggle on the Setup page selects which value is repor
 | Per-Pixel Region | Centre FOV | Region for per-pixel method |
 | Edge Exclusion | 2 px | Pixels excluded per edge in Full Frame mode |
 | Rain Sensor | Enabled | Enable/disable relay-based rain detection |
-| DHT Sensor | Disabled | Ambient sensor type: Disabled / DHT11 / DHT22 |
+| Ambient Sensor | Disabled | Sensor type: Disabled / DHT11 / DHT22 / BMP180 / BMP280 / BME280 |
 | Snapshot Interval | 30 s | Thermal JPEG refresh period |
 | JPEG Quality | 80 | JPEG encoding quality (1–100) |
 | TSL2591 Integration | 300 ms | Integration time for the brightness sensor |
@@ -272,6 +285,6 @@ All settings persist to NVS flash across reboots.
 | `html_templates.h` | Inline HTML/CSS/JS for browser pages |
 | `history.h/.cpp` | Dual-resolution history ring buffers |
 | `rain_sensor.h/.cpp` | Two-pin relay rain/snow detection |
-| `dht_sensor.h/.cpp` | Optional DHT11/22 ambient temperature and humidity |
+| `dht_sensor.h/.cpp` | Optional ambient sensor: DHT11/22, BMP180, BMP280, BME280 |
 | `mqtt_handler.h/.cpp` | MQTT client + Home Assistant autodiscovery |
 | `PubSubClient.h/.cpp` | Bundled MQTT client library |

@@ -228,6 +228,33 @@ void setup()
   if (deviceConfig.rainEnabled) rainSensorSetup();
 
   // ── DHT ambient temperature / humidity sensor (optional) ─────────────────
+  // For I2C-based BMP sensors, run a full address scan first to confirm what's on the bus.
+  if (deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4) {
+    Debug.println("--- I2C full scan (BMP sensor configured) ---");
+    bool anyFound = false;
+    for (uint8_t addr = 1; addr < 127; addr++) {
+      Wire.beginTransmission(addr);
+      if (Wire.endTransmission() == 0) {
+        // Read chip ID register (0xD0) to identify the device
+        Wire.beginTransmission(addr);
+        Wire.write(0xD0);
+        Wire.endTransmission(false);
+        Wire.requestFrom(addr, (uint8_t)1);
+        uint8_t chipId = Wire.available() ? Wire.read() : 0xFF;
+        Debug.printf("  I2C device at 0x%02X  chipId=0x%02X", addr, chipId);
+        if      (addr == 0x29 || addr == 0x28) Debug.print(" (TSL2591)");
+        else if (addr == 0x33)                 Debug.print(" (MLX90640)");
+        else if (chipId == 0x58)               Debug.print(" (BMP280)");
+        else if (chipId == 0x60)               Debug.print(" (BME280)");
+        else if (chipId == 0x50)               Debug.print(" (BMP388)");
+        else if (chipId == 0x42)               Debug.print(" (BMP390)");
+        Debug.println("");
+        anyFound = true;
+      }
+    }
+    if (!anyFound) Debug.println("  No I2C devices found on bus!");
+    Debug.println("--- I2C full scan complete ---");
+  }
   if (deviceConfig.dhtType != 0) dhtSetup();
 
   // ── History ring buffers ──────────────────────────────────────────────────
