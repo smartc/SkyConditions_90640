@@ -207,6 +207,9 @@ static void handleHistoryJSON()
   if (webUiServer.hasArg("minutes"))
     minutes = webUiServer.arg("minutes").toInt();
   historyStreamJSON(webUiServer, minutes);
+  // Chunked responses leave the connection open under HTTP/1.1 keep-alive.
+  // Close explicitly so the socket is freed immediately.
+  webUiServer.client().stop();
 }
 
 static void handleSaveConfig()
@@ -324,6 +327,8 @@ static void handleThermalMatrix()
     webUiServer.sendContent("]");
   }
   webUiServer.sendContent("]}");
+  // Close immediately – same reason as handleHistoryJSON.
+  webUiServer.client().stop();
 }
 
 bool getThermalJpeg(const uint8_t **buf, size_t *len)
@@ -388,6 +393,11 @@ void initWebUI()
 
   wsServer.begin();
   wsServer.onEvent(onWebSocketEvent);
+  // Detect dead clients quickly so their sockets are freed before the lwIP
+  // PCB pool is exhausted.  Ping every 15 s; disconnect after one missed pong
+  // (3 s timeout).  Without this, zombie connections accumulate until the
+  // shared TCP socket pool fills up and the web server stops accepting.
+  wsServer.enableHeartbeat(15000, 3000, 1);
   Debug.println("WebSocket server started on port 81");
 }
 
