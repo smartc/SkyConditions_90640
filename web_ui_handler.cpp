@@ -455,3 +455,8 @@ void broadcastThermalFrame()
   skyConditions.fillWebSocketBuffer(wsFrameBuffer);
   wsServer.broadcastBIN(wsFrameBuffer, WS_FRAME_SIZE);
 }
+
+uint8_t getWsClientCount()
+{
+  return wsServer.connectedClients();
+}

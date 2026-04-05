@@ -29,6 +29,7 @@
 #include "mqtt_handler.h"
 #include "rain_sensor.h"
 #include "dht_sensor.h"
+#include "watchdog.h"
 
 #include <Wire.h>
 #include <Adafruit_MLX90640.h>
@@ -257,6 +258,9 @@ void setup()
   }
   if (deviceConfig.dhtType != 0) dhtSetup();
 
+  // ── Health watchdog ───────────────────────────────────────────────────────
+  watchdogSetup();
+
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
 
@@ -288,6 +292,9 @@ void loop()
 
   // Service MQTT.
   mqttLoop();
+
+  // Health watchdog – heap monitor, periodic log.
+  watchdogLoop();
 
   // Rain / snow sensor – relay read + periodic Modbus poll.
   if (deviceConfig.rainEnabled) rainSensorLoop();

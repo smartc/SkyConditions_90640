@@ -28,4 +28,8 @@ void updateThermalSnapshot();   // regenerate cached /thermal.jpg
 // Returns false if no snapshot is available yet.
 bool getThermalJpeg(const uint8_t **buf, size_t *len);
 
+// Returns the number of currently connected WebSocket clients.
+// Used by the watchdog to detect zombie-connection accumulation.
+uint8_t getWsClientCount();
+
 #endif // WEB_UI_HANDLER_H
