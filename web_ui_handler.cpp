@@ -206,10 +206,10 @@ static void handleHistoryJSON()
   int minutes = 60;
   if (webUiServer.hasArg("minutes"))
     minutes = webUiServer.arg("minutes").toInt();
+  // Connection: close so the socket is released promptly after the response;
+  // must be set before historyStreamJSON() calls server.send() to write headers.
+  webUiServer.sendHeader("Connection", "close");
   historyStreamJSON(webUiServer, minutes);
-  // Chunked responses leave the connection open under HTTP/1.1 keep-alive.
-  // Close explicitly so the socket is freed immediately.
-  webUiServer.client().stop();
 }
 
 static void handleSaveConfig()
@@ -304,6 +304,11 @@ static void handleThermalMatrix()
   const float *frame = skyConditions.getFrame();
   char buf[32];
 
+  // Connection: close tells the browser to close after receiving the complete
+  // response, so the socket is freed promptly without waiting on keep-alive
+  // timeout.  The WebServer still sends the HTTP chunked terminator (0\r\n\r\n)
+  // correctly after the handler returns – don't call client().stop() here.
+  webUiServer.sendHeader("Connection", "close");
   webUiServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
   webUiServer.send(200, "application/json", "");
 
@@ -327,8 +332,6 @@ static void handleThermalMatrix()
     webUiServer.sendContent("]");
   }
   webUiServer.sendContent("]}");
-  // Close immediately – same reason as handleHistoryJSON.
-  webUiServer.client().stop();
 }
 
 bool getThermalJpeg(const uint8_t **buf, size_t *len)
