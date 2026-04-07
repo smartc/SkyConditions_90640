@@ -297,7 +297,10 @@ void loop()
   watchdogLoop();
 
   // Rain / snow sensor – relay read + periodic Modbus poll.
-  if (deviceConfig.rainEnabled) rainSensorLoop();
+  if (deviceConfig.rainEnabled) {
+    rainSensorLoop();
+    historyAccumulateRain(rainIsWet());
+  }
 
   // DHT ambient sensor – periodic read.
   if (deviceConfig.dhtType != 0) dhtLoop();

@@ -198,7 +198,7 @@ static void handleReboot()
 
 static void handleTrends()
 {
-  webUiServer.send(200, "text/html", getTrendsPage());
+  webUiServer.send(200, "text/html", getTrendsPage(deviceConfig.rainEnabled));
 }
 
 static void handleHistoryJSON()

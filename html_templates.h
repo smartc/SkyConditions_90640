@@ -805,7 +805,7 @@ function rebootDevice() {
 // ---------------------------------------------------------------------------
 // Trends page – time-series charts for temperature and brightness
 // ---------------------------------------------------------------------------
-inline String getTrendsPage()
+inline String getTrendsPage(bool rainEnabled)
 {
   String html = getPageHeader("Sky Conditions – Trends");
   html += "<h1>Sky Conditions – Trends</h1>\n";
@@ -834,6 +834,10 @@ inline String getTrendsPage()
           "<canvas id='cL' height='170' style='width:100%;display:block'></canvas></div>\n";
   html += "<div class='card'><h2>Sky Quality (mag/arcsec\u00B2)</h2>"
           "<canvas id='cQ' height='170' style='width:100%;display:block'></canvas></div>\n";
+
+  if (rainEnabled)
+    html += "<div class='card'><h2>Rain / Snow</h2>"
+            "<canvas id='cR' height='80' style='width:100%;display:block'></canvas></div>\n";
 
   html += R"rawjs(
 <script>
@@ -885,6 +889,70 @@ function renderAll(d) {
   drawChart('cQ', [
     { label:'SQM', color:'#00cec9', data:d.sqm, lo:d.sqm_lo, hi:d.sqm_hi }
   ], d.t, d.now, 'mag/sq"');
+
+  if (document.getElementById('cR')) drawRainChart('cR', d.rain, d.t, d.now);
+}
+
+// ── Rain / snow block chart ─────────────────────────────────────────────────
+function drawRainChart(id, data, timestamps, nowMs) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  canvas.width = canvas.parentElement.clientWidth - 32;
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const P = { t: 8, r: 14, b: 22, l: 54 };
+  const cw = W - P.l - P.r, ch = H - P.t - P.b;
+
+  ctx.fillStyle = '#0f3460';
+  ctx.fillRect(0, 0, W, H);
+
+  const n = timestamps ? timestamps.length : 0;
+  if (n === 0 || !data) {
+    ctx.fillStyle = '#888'; ctx.textAlign = 'center'; ctx.font = '13px sans-serif';
+    ctx.fillText('No data yet – wait for the first 30-second bucket to close.', W / 2, H / 2);
+    return;
+  }
+
+  const t0 = timestamps[0], t1 = timestamps[n - 1];
+  const tSpan = (t1 - t0) || 1;
+  const tx = i => P.l + (timestamps[i] - t0) / tSpan * cw;
+
+  for (let i = 0; i < n; i++) {
+    const v = data[i];
+    if (v === null) continue;
+    ctx.fillStyle = (v >= 0.5) ? '#e17055' : '#00b894';
+    const x1 = tx(i);
+    const x2 = (i + 1 < n) ? tx(i + 1) : P.l + cw;
+    ctx.fillRect(x1, P.t, Math.max(x2 - x1, 1), ch);
+  }
+
+  // Y labels
+  ctx.fillStyle = '#8899aa'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+  ctx.fillText('Wet', P.l - 3, P.t + 9);
+  ctx.fillText('Dry', P.l - 3, P.t + ch);
+
+  // X-axis time labels
+  const xTicks = 6;
+  for (let k = 0; k <= xTicks; k++) {
+    const xp = P.l + cw * k / xTicks;
+    const tAt = t0 + tSpan * k / xTicks;
+    const mAgo = (tAt - nowMs) / 60000;
+    const lbl = (k === xTicks) ? 'now' :
+                (Math.abs(mAgo) < 90 ? Math.round(-mAgo) + 'm' :
+                                       (-mAgo / 60).toFixed(1) + 'h');
+    ctx.fillStyle = '#8899aa'; ctx.textAlign = 'center'; ctx.font = '10px sans-serif';
+    ctx.fillText(lbl, xp, P.t + ch + 14);
+  }
+
+  // Legend
+  let lx = P.l;
+  const ly = H - 2;
+  ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#00b894'; ctx.fillRect(lx, ly - 8, 12, 8);
+  ctx.fillStyle = '#ccc'; ctx.fillText('Dry', lx + 15, ly);
+  lx += 45;
+  ctx.fillStyle = '#e17055'; ctx.fillRect(lx, ly - 8, 12, 8);
+  ctx.fillStyle = '#ccc'; ctx.fillText('Wet / Snow', lx + 15, ly);
 }
 
 // ── Chart renderer ─────────────────────────────────────────────────────────

@@ -169,6 +169,11 @@ void historyAccumulateBrightness(float lux, float sqm)
   accumulate(HM_SQM, sqm);
 }
 
+void historyAccumulateRain(bool wet)
+{
+  accumulate(HM_RAIN, wet ? 1.0f : 0.0f);
+}
+
 // ---------------------------------------------------------------------------
 // JSON streaming
 // ---------------------------------------------------------------------------
@@ -234,7 +239,7 @@ void historyStreamJSON(WebServer& server, int minutes)
   // Outer loop over each of the three stat types (avg, lo, hi),
   // inner loop over metrics, innermost loop over buckets.
   static const char* keys[HM_N] = {
-    "sky","fmin","fmax","med","amb","cloud","cloudpx","lux","sqm"
+    "sky","fmin","fmax","med","amb","cloud","cloudpx","lux","sqm","rain"
   };
   static const char* suffixes[3] = { "", "_lo", "_hi" };
 
