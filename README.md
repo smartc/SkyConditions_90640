@@ -23,6 +23,7 @@ ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 in
   - Both methods trended simultaneously; Setup page toggle selects which value is reported to Alpaca
   - Live thermal view bounding box tracks the configured per-pixel region
 - **Optional rain / snow sensor** — two-pin relay detection; relay closure = wet
+- **DDA-compatible Safety Sensor UDP broadcast** — periodically broadcasts rain safety status on the local subnet in the Dark Dragon Astronomy park-sensor JSON format, allowing devices such as a Roll-Off Roof controller to discover the sensor and react to weather conditions automatically; port, interval, and enable state are runtime-configurable
 - **Optional ambient sensor** — runtime-selectable: DHT11, DHT22, BMP180, BMP280, or BME280; replaces MLX90640 die temp as ambient reference for cloud cover calculations
 - **MQTT / Home Assistant autodiscovery** — publishes all sensor values + thermal thumbnail; HA entities created automatically on connect
 - **ClearDarkSky colormap** for the thermal heatmap — dark navy (clear/cold) through white (overcast/warm), anchored to calibration thresholds
@@ -309,6 +310,9 @@ The **Cloud Cover Method** toggle on the Setup page selects which value is repor
 | MQTT Port | 1883 | Broker port |
 | MQTT User / Password | *(blank)* | Broker credentials |
 | MQTT Topic Prefix | skyconditions-*mac* | Topic prefix (auto-suffixed with MAC if unchanged) |
+| Safety Broadcast | Disabled | Broadcast rain safety status via UDP (DDA park-sensor protocol) |
+| Safety Broadcast Port | 23435 | UDP destination port for safety broadcasts |
+| Safety Broadcast Interval | 30 s | Keep-alive broadcast interval; immediate send on state change (min 5 s) |
 
 All settings persist to NVS flash across reboots.
 
@@ -322,23 +326,34 @@ All settings persist to NVS flash across reboots.
 | 81 | WebSocket | Live thermal binary stream |
 | 11111 | HTTP | ASCOM Alpaca API (all three devices) |
 | 32227 | UDP | Alpaca discovery |
+| 23435 | UDP broadcast | DDA-compatible safety sensor status (configurable) |
 
 ---
 
 ## File Structure
 
-| File | Purpose |
-|------|---------|
-| `SkyConditions_90640.ino` | Entry point: WiFi, sensor init, main loop |
-| `config.h` | Compile-time constants (pins, ports, frame geometry, version) |
-| `config_store.h/.cpp` | NVS persistent config load/save |
-| `debug.h/.cpp` | Conditional serial debug wrapper |
-| `sky_sensor.h/.cpp` | `SkyConditions` class — sensor data, stats, dual cloud cover, colormap |
-| `alpaca.h/.cpp` | ASCOM Alpaca HTTP server (port 11111) — ObservingConditions, SafetyMonitor, Switch + UDP discovery |
-| `web_ui_handler.h/.cpp` | Web server (port 80) + WebSocket server (port 81) |
-| `html_templates.h` | Inline HTML/CSS/JS for browser pages |
-| `history.h/.cpp` | Dual-resolution history ring buffers |
-| `rain_sensor.h/.cpp` | Two-pin relay rain/snow detection |
-| `dht_sensor.h/.cpp` | Optional ambient sensor: DHT11/22, BMP180, BMP280, BME280 |
-| `mqtt_handler.h/.cpp` | MQTT client + Home Assistant autodiscovery |
-| `PubSubClient.h/.cpp` | Bundled MQTT client library |
+```
+SkyConditions_90640/
+├── SkyConditions_90640.ino       Entry point: WiFi, sensor init, main loop
+├── config.h                      Compile-time constants (pins, ports, frame geometry, version)
+├── config_store.h/.cpp           NVS persistent config load/save
+├── tools/
+│   └── udp_monitor.py            Python listener for UDP safety broadcasts (testing)
+└── src/
+    ├── debug/                    Conditional serial debug wrapper
+    ├── alpaca/                   ASCOM Alpaca HTTP server (port 11111) + UDP discovery
+    ├── sensors/
+    │   ├── sky_sensor            SkyConditions class — MLX90640, dual cloud cover, colormap
+    │   ├── dht_sensor            Optional ambient sensor: DHT11/22, BMP180, BMP280, BME280
+    │   ├── rain_sensor           Two-pin relay + RS485 Modbus rain/snow detection
+    │   └── history               Dual-resolution history ring buffers (30 s / 15 min)
+    ├── webserver/
+    │   ├── web_ui_handler        HTTP server (port 80) + WebSocket server (port 81)
+    │   └── html_templates        Inline HTML/CSS/JS for browser pages
+    ├── mqtt/
+    │   ├── mqtt_handler          MQTT client + Home Assistant autodiscovery
+    │   └── PubSubClient          Bundled MQTT client library
+    ├── safety/
+    │   └── rain_safety_broadcast DDA-compatible safety sensor UDP broadcast
+    └── watchdog/                 Heap monitor / periodic health log
+```
