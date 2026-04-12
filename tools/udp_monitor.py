@@ -18,36 +18,48 @@ LISTEN_FOR = {"SafetySensor"}   # add e.g. "ScopeParkSensor" to also show park s
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.settimeout(1.0)   # unblock every second so Ctrl-C is handled promptly
 sock.bind(("", PORT))
 
 print(f"Listening for UDP broadcasts on port {PORT}...")
 print(f"Accepting deviceType: {LISTEN_FOR}")
+print("Press Ctrl-C to exit.")
 print()
 
-while True:
-    data, addr = sock.recvfrom(512)
-    try:
-        msg = json.loads(data.decode())
-        dev_type = msg.get("deviceType", "")
+try:
+    while True:
+        try:
+            data, addr = sock.recvfrom(1024)
+        except socket.timeout:
+            continue   # no packet this second — loop and check for Ctrl-C
 
-        if dev_type not in LISTEN_FOR:
-            print(f"[{addr[0]}] Ignored: deviceType={dev_type!r}")
-            continue
+        try:
+            msg = json.loads(data.decode())
+            dev_type = msg.get("deviceType", "")
 
-        safe     = msg.get("isSafe")
-        rain     = msg.get("rainState", "?")
-        temp     = msg.get("ambTemp")
-        name     = msg.get("name", "?")
-        serial   = msg.get("serialNumber", "?")
+            if dev_type not in LISTEN_FOR:
+                print(f"[{addr[0]}] Ignored: deviceType={dev_type!r}")
+                continue
 
-        temp_str = f"{temp:.1f}°C" if temp is not None else "null"
-        safe_str = "SAFE ✓" if safe else "UNSAFE ✗"
+            safe     = msg.get("isSafe")
+            rain     = msg.get("rainState", "?")
+            temp     = msg.get("ambTemp")
+            name     = msg.get("name", "?")
+            serial   = msg.get("serialNumber", "?")
 
-        print(f"[{addr[0]}] {name} ({dev_type} / {serial})")
-        print(f"  → {safe_str}  rain={rain}  ambTemp={temp_str}")
-        print()
+            temp_str = f"{temp:.1f}°C" if temp is not None else "null"
+            safe_str = "SAFE ✓" if safe else "UNSAFE ✗"
 
-    except json.JSONDecodeError:
-        print(f"[{addr[0]}] Non-JSON packet: {data!r}")
-    except Exception as e:
-        print(f"[{addr[0]}] Error: {e}  raw={data!r}")
+            print(f"[{addr[0]}] {name} ({dev_type} / {serial})")
+            print(f"  → {safe_str}  rain={rain}  ambTemp={temp_str}")
+            print()
+
+        except json.JSONDecodeError:
+            print(f"[{addr[0]}] Non-JSON packet: {data!r}")
+        except Exception as e:
+            print(f"[{addr[0]}] Error: {e}  raw={data!r}")
+
+except KeyboardInterrupt:
+    print("\nExiting.")
+    sock.close()
