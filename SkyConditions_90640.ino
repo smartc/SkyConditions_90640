@@ -28,6 +28,7 @@
 #include "config_store.h"
 #include "mqtt_handler.h"
 #include "rain_sensor.h"
+#include "rain_safety_broadcast.h"
 #include "dht_sensor.h"
 #include "watchdog.h"
 
@@ -228,6 +229,9 @@ void setup()
   // ── Rain / snow sensor (relay + RS485 Modbus) ────────────────────────────
   if (deviceConfig.rainEnabled) rainSensorSetup();
 
+  // ── Safety sensor UDP broadcast (DDA-compatible) ──────────────────────────
+  rainSafetyBroadcastSetup();
+
   // ── DHT ambient temperature / humidity sensor (optional) ─────────────────
   // For I2C-based BMP sensors, run a full address scan first to confirm what's on the bus.
   if (deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4) {
@@ -301,6 +305,9 @@ void loop()
     rainSensorLoop();
     historyAccumulateRain(rainIsWet());
   }
+
+  // Safety sensor UDP broadcast – periodic keep-alive + immediate on state change.
+  rainSafetyBroadcastLoop();
 
   // DHT ambient sensor – periodic read.
   if (deviceConfig.dhtType != 0) dhtLoop();

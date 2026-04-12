@@ -96,6 +96,11 @@
 #define RAIN_POLL_MS         5000  // Modbus poll interval (ms)
 
 
+// Safety Sensor UDP Broadcast (DDA-compatible park-sensor protocol)
+#define RAIN_SAFETY_DEVICE_TYPE           "SafetySensor"
+#define RAIN_SAFETY_UDP_PORT_DEFAULT      23435
+#define RAIN_SAFETY_INTERVAL_DEFAULT_SEC  30
+
 // Preferences Namespace
 #define PREFERENCES_NAMESPACE "skyCond"
 

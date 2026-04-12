@@ -614,6 +614,28 @@ function updateEdge() {
           "<td>Relay: senses relay contact closure via GPIO. "
           "RS485: polls ZTS-3000 via Modbus RTU.</td></tr>\n";
 
+  // ── Safety Sensor UDP Broadcast ───────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Safety Sensor UDP Broadcast"
+          " <span style='font-weight:normal;font-size:0.8em;color:#74b9ff'>"
+          "(takes effect immediately)</span></th></tr>\n";
+  html += "<tr><td>Enable Broadcast</td><td>"
+          "<label style='cursor:pointer'>"
+          "<input type='checkbox' name='safetyBcastEnabled' value='1'" +
+          String(deviceConfig.safetyBcastEnabled ? " checked" : "") +
+          "> Enabled</label></td>"
+          "<td>Broadcast rain safety status over UDP (DDA park-sensor protocol). "
+          "Receivers (e.g. Roll-Off Roof controller) discover this device automatically.</td></tr>\n";
+  html += "<tr><td>UDP Port</td>"
+          "<td><input type='number' name='safetyBcastPort' min='1024' max='65535' value='" +
+          String(deviceConfig.safetyBcastPort) + "' style='" + inpStyle + "width:80px;'></td>"
+          "<td>Destination port for broadcast packets. Default: 23435 (DDA park-sensor port).</td></tr>\n";
+  html += "<tr><td>Broadcast Interval</td>"
+          "<td><input type='number' name='safetyBcastSec' min='5' max='3600' value='" +
+          String(deviceConfig.safetyBcastIntervalSec) + "' style='" + inpStyle + "width:70px;'>"
+          " s</td>"
+          "<td>Keep-alive interval (seconds). A broadcast is also sent immediately on any "
+          "wet&nbsp;&harr;&nbsp;dry state change. Default: 30 s. Minimum: 5 s.</td></tr>\n";
+
   // ── Ambient Temperature Sensor ───────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>Ambient Temperature Sensor"
           " <span style='font-weight:normal;font-size:0.8em;color:#74b9ff'>"
