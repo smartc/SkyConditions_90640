@@ -64,6 +64,13 @@ void configLoad(DeviceConfig &cfg)
   cfg.bmp280Addr         = prefs.getUChar("bmp280Addr",  0x76);  // default: SDO→GND
   if (cfg.bmp280Addr != 0x76 && cfg.bmp280Addr != 0x77) cfg.bmp280Addr = 0x76;
 
+  // Safety sensor UDP broadcast
+  cfg.safetyBcastEnabled     = prefs.getBool  ("safetyBcastEn",   false);
+  cfg.safetyBcastPort        = prefs.getUShort("safetyBcastPort", RAIN_SAFETY_UDP_PORT_DEFAULT);
+  cfg.safetyBcastIntervalSec = prefs.getUShort("safetyBcastSec",  RAIN_SAFETY_INTERVAL_DEFAULT_SEC);
+  if (cfg.safetyBcastIntervalSec < 5)  cfg.safetyBcastIntervalSec = 5;    // minimum 5 s
+  if (cfg.safetyBcastPort == 0)        cfg.safetyBcastPort = RAIN_SAFETY_UDP_PORT_DEFAULT;
+
   prefs.end();
 }
 
@@ -95,6 +102,9 @@ void configSave(const DeviceConfig &cfg)
   prefs.putBool  ("rainEn",      cfg.rainEnabled);
   prefs.putUChar ("dhtType",     cfg.dhtType);
   prefs.putUChar ("bmp280Addr",  cfg.bmp280Addr);
+  prefs.putBool  ("safetyBcastEn",   cfg.safetyBcastEnabled);
+  prefs.putUShort("safetyBcastPort", cfg.safetyBcastPort);
+  prefs.putUShort("safetyBcastSec",  cfg.safetyBcastIntervalSec);
 
   prefs.end();
 }

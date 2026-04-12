@@ -51,6 +51,11 @@ struct DeviceConfig {
   // Ambient temperature sensor
   uint8_t  dhtType;              // 0=disabled, 1=DHT11, 2=DHT22, 3=BMP180, 4=BMP280, 5=BME280
   uint8_t  bmp280Addr;           // I2C address: 0x76 (SDO→GND) or 0x77 (SDO→VCC)
+
+  // Safety sensor UDP broadcast (DDA-compatible)
+  bool     safetyBcastEnabled;       // false = disabled (default)
+  uint16_t safetyBcastPort;          // UDP destination port (default 23435)
+  uint16_t safetyBcastIntervalSec;   // seconds between keep-alive broadcasts (default 30)
 };
 
 // Load settings from NVS; fills in defaults if keys are absent.

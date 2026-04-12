@@ -175,7 +175,7 @@ Implemented in `mqtt_handler.h/.cpp` using the bundled PubSubClient library.
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.5.3"
+  "ip": "192.168.x.x",  "version": "0.6.0"
 }
 ```
 

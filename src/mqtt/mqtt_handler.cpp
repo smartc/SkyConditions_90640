@@ -5,10 +5,10 @@
 
 #include "mqtt_handler.h"
 #include "config_store.h"
-#include "sky_sensor.h"
-#include "rain_sensor.h"
-#include "web_ui_handler.h"
-#include "debug.h"
+#include "../sensors/sky_sensor.h"
+#include "../sensors/rain_sensor.h"
+#include "../webserver/web_ui_handler.h"
+#include "../debug/debug.h"
 #include <Arduino.h>
 
 // ---------------------------------------------------------------------------

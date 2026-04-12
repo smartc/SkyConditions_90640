@@ -9,10 +9,10 @@
 #include "web_ui_handler.h"
 #include "html_templates.h"
 #include "config_store.h"
-#include "history.h"
-#include "mqtt_handler.h"
-#include "rain_sensor.h"
-#include "dht_sensor.h"
+#include "../sensors/history.h"
+#include "../mqtt/mqtt_handler.h"
+#include "../sensors/rain_sensor.h"
+#include "../sensors/dht_sensor.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <img_converters.h>
@@ -277,6 +277,17 @@ static void handleSaveConfig()
 
   // Rain sensor
   deviceConfig.rainEnabled = webUiServer.hasArg("rainEnabled");
+
+  // Safety sensor UDP broadcast
+  deviceConfig.safetyBcastEnabled = webUiServer.hasArg("safetyBcastEnabled");
+  if (webUiServer.hasArg("safetyBcastPort")) {
+    uint16_t p = (uint16_t)constrain(webUiServer.arg("safetyBcastPort").toInt(), 1024, 65535);
+    deviceConfig.safetyBcastPort = p;
+  }
+  if (webUiServer.hasArg("safetyBcastSec")) {
+    uint16_t s = (uint16_t)constrain(webUiServer.arg("safetyBcastSec").toInt(), 5, 3600);
+    deviceConfig.safetyBcastIntervalSec = s;
+  }
 
   // DHT / BMP sensor
   if (webUiServer.hasArg("dhtType"))

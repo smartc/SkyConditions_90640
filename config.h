@@ -11,11 +11,9 @@
 
 // MLX90640 I2C Configuration
 #if defined(BOARD_XIAO_SENSE)
-  #pragma message "Board: XIAO ESP32-S3 Sense (SDA=GPIO5, SCL=GPIO6)"
   #define THERMAL_SDA_PIN   5    // GPIO5 = D4 pad on XIAO ESP32-S3 Sense
   #define THERMAL_SCL_PIN   6    // GPIO6 = D5 pad on XIAO ESP32-S3 Sense
 #else
-  #pragma message "Board: ESP32-S3 Dev Module (SDA=GPIO8, SCL=GPIO9)"
   #define THERMAL_SDA_PIN   8    // GPIO8 on ESP32-S3 Dev Module
   #define THERMAL_SCL_PIN   9    // GPIO9 on ESP32-S3 Dev Module
 #endif
@@ -65,7 +63,7 @@
 // Device Information
 #define SERVER_NAME       "SkyConditions_90640"
 #define MANUFACTURER      "Corey Smart"
-#define MANUFACTURER_V    "0.5.3"
+#define MANUFACTURER_V    "0.6.0"
 #define LOCATION          "Observatory"
 #define DEVICE_NAME       "MLX90640 Sky Conditions Sensor"
 #define DESCRIPTION       "ESP32-S3 ASCOM Alpaca ObservingConditions device using MLX90640 thermal camera"
@@ -95,6 +93,11 @@
 #define RAIN_MODBUS_ADDR     0x01  // Default slave address per datasheet
 #define RAIN_POLL_MS         5000  // Modbus poll interval (ms)
 
+
+// Safety Sensor UDP Broadcast (DDA-compatible park-sensor protocol)
+#define RAIN_SAFETY_DEVICE_TYPE           "SafetySensor"
+#define RAIN_SAFETY_UDP_PORT_DEFAULT      23435
+#define RAIN_SAFETY_INTERVAL_DEFAULT_SEC  30
 
 // Preferences Namespace
 #define PREFERENCES_NAMESPACE "skyCond"

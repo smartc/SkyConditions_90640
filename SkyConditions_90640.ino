@@ -19,17 +19,18 @@
  * Board: ESP32S3 Dev Module (or compatible)
  */
 
-#include "debug.h"
 #include "config.h"
-#include "sky_sensor.h"
-#include "web_ui_handler.h"
-#include "alpaca.h"
-#include "history.h"
 #include "config_store.h"
-#include "mqtt_handler.h"
-#include "rain_sensor.h"
-#include "dht_sensor.h"
-#include "watchdog.h"
+#include "src/debug/debug.h"
+#include "src/alpaca/alpaca.h"
+#include "src/sensors/sky_sensor.h"
+#include "src/sensors/dht_sensor.h"
+#include "src/sensors/rain_sensor.h"
+#include "src/sensors/history.h"
+#include "src/webserver/web_ui_handler.h"
+#include "src/mqtt/mqtt_handler.h"
+#include "src/safety/rain_safety_broadcast.h"
+#include "src/watchdog/watchdog.h"
 
 #include <Wire.h>
 #include <Adafruit_MLX90640.h>
@@ -228,6 +229,9 @@ void setup()
   // ── Rain / snow sensor (relay + RS485 Modbus) ────────────────────────────
   if (deviceConfig.rainEnabled) rainSensorSetup();
 
+  // ── Safety sensor UDP broadcast (DDA-compatible) ──────────────────────────
+  rainSafetyBroadcastSetup();
+
   // ── DHT ambient temperature / humidity sensor (optional) ─────────────────
   // For I2C-based BMP sensors, run a full address scan first to confirm what's on the bus.
   if (deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4) {
@@ -301,6 +305,9 @@ void loop()
     rainSensorLoop();
     historyAccumulateRain(rainIsWet());
   }
+
+  // Safety sensor UDP broadcast – periodic keep-alive + immediate on state change.
+  rainSafetyBroadcastLoop();
 
   // DHT ambient sensor – periodic read.
   if (deviceConfig.dhtType != 0) dhtLoop();

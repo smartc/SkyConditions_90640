@@ -1,6 +1,6 @@
 #include "sky_sensor.h"
 #include "config_store.h"
-#include "debug.h"
+#include "../debug/debug.h"
 #include <algorithm>
 #include <cstring>
 #include <math.h>
