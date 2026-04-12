@@ -2,7 +2,7 @@
 
 ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 infrared thermal camera and TSL2591 sky brightness sensor.  Provides a fully standards-compliant Alpaca API for sky temperature, cloud cover, sky brightness, and sky quality monitoring — plus a live thermal viewer and trend charts in the browser.
 
-**Current version: 0.5.3**
+**Current version: 0.6.0**
 
 ---
 
@@ -261,7 +261,7 @@ Enable in Setup → MQTT.  The device publishes to `<prefix>/state` every 30 sec
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.5.3"
+  "ip": "192.168.x.x",  "version": "0.6.0"
 }
 ```
 
