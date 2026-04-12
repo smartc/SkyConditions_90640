@@ -7,7 +7,7 @@
 #include "dht_sensor.h"
 #include "config.h"
 #include "config_store.h"
-#include "debug.h"
+#include "../debug/debug.h"
 
 // ── DHT (types 1 & 2) ────────────────────────────────────────────────────────
 #if DHT_DATA_PIN >= 0

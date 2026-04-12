@@ -9,10 +9,10 @@
 #include "web_ui_handler.h"
 #include "html_templates.h"
 #include "config_store.h"
-#include "history.h"
-#include "mqtt_handler.h"
-#include "rain_sensor.h"
-#include "dht_sensor.h"
+#include "../sensors/history.h"
+#include "../mqtt/mqtt_handler.h"
+#include "../sensors/rain_sensor.h"
+#include "../sensors/dht_sensor.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <img_converters.h>

@@ -5,9 +5,9 @@
 #include "rain_safety_broadcast.h"
 #include "config.h"
 #include "config_store.h"
-#include "rain_sensor.h"
-#include "sky_sensor.h"
-#include "debug.h"
+#include "../sensors/rain_sensor.h"
+#include "../sensors/sky_sensor.h"
+#include "../debug/debug.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <ArduinoJson.h>

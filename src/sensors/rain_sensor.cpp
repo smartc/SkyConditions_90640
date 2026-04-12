@@ -6,8 +6,8 @@
 #include "rain_sensor.h"
 #include "config.h"
 #include "config_store.h"
-#include "debug.h"
-#include "web_ui_handler.h"
+#include "../debug/debug.h"
+#include "../webserver/web_ui_handler.h"
 
 RainData rainData = {};
 

@@ -5,8 +5,8 @@
 #include <WebSocketsServer.h>
 #include <WiFiManager.h>
 #include "config.h"
-#include "debug.h"
-#include "sky_sensor.h"
+#include "../debug/debug.h"
+#include "../sensors/sky_sensor.h"
 
 // Forward declarations for HTML template functions
 String getHomePage();

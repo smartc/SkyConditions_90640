@@ -16,8 +16,8 @@
  */
 
 #include "watchdog.h"
-#include "web_ui_handler.h"
-#include "debug.h"
+#include "../webserver/web_ui_handler.h"
+#include "../debug/debug.h"
 #include <Arduino.h>
 
 // ── Tunable constants ─────────────────────────────────────────────────────────

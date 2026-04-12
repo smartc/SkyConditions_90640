@@ -9,11 +9,11 @@
  */
 
 #include "alpaca.h"
-#include "sky_sensor.h"
+#include "../sensors/sky_sensor.h"
 #include "config_store.h"
-#include "rain_sensor.h"
-#include "dht_sensor.h"
-#include "debug.h"
+#include "../sensors/rain_sensor.h"
+#include "../sensors/dht_sensor.h"
+#include "../debug/debug.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
 
