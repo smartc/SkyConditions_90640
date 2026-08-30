@@ -32,4 +32,9 @@ bool getThermalJpeg(const uint8_t **buf, size_t *len);
 // Used by the watchdog to detect zombie-connection accumulation.
 uint8_t getWsClientCount();
 
+// Status of the thermal JPEG staging buffer (PSRAM / internal heap / failed).
+// Used on the Setup page's Hardware card.
+String getScaledBufStatus();
+bool   isScaledBufFailed();
+
 #endif // WEB_UI_HANDLER_H

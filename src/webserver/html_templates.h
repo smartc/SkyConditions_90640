@@ -516,6 +516,11 @@ inline String getSetupPage()
           String(CENTER_ROW_START) + "–" + String(CENTER_ROW_END) + " (" +
           String(CENTER_PIXEL_COUNT) + " pixels)</td></tr>\n";
   html += "<tr><td>ESP32 Free Heap</td><td>" + String(ESP.getFreeHeap()) + " bytes</td></tr>\n";
+  html += "<tr><td>ESP32 Free PSRAM</td><td>" + String(ESP.getFreePsram()) + " bytes</td></tr>\n";
+  html += "<tr><td>Thermal JPEG Buffer</td><td>" +
+          (isScaledBufFailed() ? "<span style='color:#e17055'>" + getScaledBufStatus() + "</span>"
+                                : getScaledBufStatus()) +
+          "</td></tr>\n";
   html += "</table>\n";
   html += "</div>\n";
 

@@ -44,6 +44,12 @@ static uint8_t       jpegOutBuf[48 * 1024];   // 48 KB – comfortable for 320×
 static size_t        jpegOutLen    = 0;
 static unsigned long lastJpegUpdate = 0;
 
+// Where scaledBuf ended up (or didn't) – surfaced on /setup and in the
+// /thermal.jpg error response so a PSRAM misconfiguration is diagnosable
+// remotely instead of just repeating "scaledBuf not allocated" in /console.
+enum ScaledBufState { SCALEDBUF_PSRAM, SCALEDBUF_INTERNAL, SCALEDBUF_FAILED };
+static ScaledBufState scaledBufState = SCALEDBUF_FAILED;
+
 // ---------------------------------------------------------------------------
 // fmt2jpg_cb output callback – writes JPEG chunks into jpegOutBuf.
 // ---------------------------------------------------------------------------
@@ -125,6 +131,13 @@ void updateThermalSnapshot()
 
 static void handleThermalJpeg()
 {
+  if (scaledBufState == SCALEDBUF_FAILED) {
+    webUiServer.send(503, "text/plain",
+      "Thermal JPEG staging buffer (230 KB) failed to allocate from PSRAM or internal heap. "
+      "PSRAM is likely not enabled for this build. In Arduino IDE: Tools > PSRAM > OPI PSRAM, "
+      "then recompile and reflash. See /setup > Hardware for current status.");
+    return;
+  }
   if (jpegOutLen == 0) {
     webUiServer.send(503, "text/plain", "No thermal data yet");
     return;
@@ -396,11 +409,19 @@ void initWebUI()
   const size_t scaledBytes = (size_t)SNAP_W * SNAP_H * 3;
   scaledBuf = (uint8_t*)heap_caps_malloc(scaledBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (scaledBuf) {
+    scaledBufState = SCALEDBUF_PSRAM;
     Debug.printf("scaledBuf: %u B in PSRAM\n", (unsigned)scaledBytes);
   } else {
-    // PSRAM unavailable – fall back to internal heap (only feasible at small scales).
+    // PSRAM unavailable – fall back to internal heap (only feasible at small scales;
+    // a 230 KB contiguous block is unlikely to succeed here once WiFi/BT are up).
     scaledBuf = (uint8_t*)malloc(scaledBytes);
+    scaledBufState = scaledBuf ? SCALEDBUF_INTERNAL : SCALEDBUF_FAILED;
     Debug.printf("scaledBuf: %u B in internal heap (PSRAM unavailable)\n", (unsigned)scaledBytes);
+    if (!scaledBuf) {
+      Debug.println("WARNING: scaledBuf allocation FAILED entirely (PSRAM + internal heap both "
+                     "unavailable) – thermal JPEG snapshots (/thermal.jpg) will not work. "
+                     "Enable PSRAM in Arduino IDE: Tools > PSRAM > OPI PSRAM, then reflash.");
+    }
   }
 
   webUiServer.on("/",             HTTP_GET,  handleRoot);
@@ -490,4 +511,26 @@ void broadcastThermalFrame()
 uint8_t getWsClientCount()
 {
   return wsServer.connectedClients();
+}
+
+// Human-readable status of the thermal JPEG staging buffer, for /setup's
+// Hardware card. A FAILED result (PSRAM disabled/unavailable and the
+// internal-heap fallback too small to satisfy) means /thermal.jpg will
+// permanently 503 – see the matching warning text in handleThermalJpeg().
+String getScaledBufStatus()
+{
+  switch (scaledBufState) {
+    case SCALEDBUF_PSRAM:
+      return "OK – PSRAM";
+    case SCALEDBUF_INTERNAL:
+      return "OK – internal heap (PSRAM unavailable; not recommended long-term)";
+    default:
+      return "FAILED – PSRAM not available; enable Tools &gt; PSRAM &gt; OPI PSRAM "
+             "in Arduino IDE and reflash";
+  }
+}
+
+bool isScaledBufFailed()
+{
+  return scaledBufState == SCALEDBUF_FAILED;
 }
