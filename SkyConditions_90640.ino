@@ -27,6 +27,7 @@
 #include "src/sensors/dht_sensor.h"
 #include "src/sensors/rain_sensor.h"
 #include "src/sensors/history.h"
+#include "src/sensors/sky_history.h"
 #include "src/webserver/web_ui_handler.h"
 #include "src/mqtt/mqtt_handler.h"
 #include "src/safety/rain_safety_broadcast.h"
@@ -71,6 +72,13 @@ void setup()
   Serial.begin(115200);
   delay(100);
   Debug.println("\nMLX90640 Sky Conditions Sensor – ASCOM Alpaca Driver v" MANUFACTURER_V);
+  Debug.println("Board (Arduino IDE selection): " IDE_BOARD_ID);
+#if defined(BOARD_AUTO_FALLBACK)
+  Debug.println("WARNING: board id not recognised – defaulted pinout profile to " BOARD_NAME
+                ". Verify I2C pins on /setup, or force a profile in config.h.");
+#else
+  Debug.println("Pinout profile (auto-detected): " BOARD_NAME);
+#endif
 
   // ── I2C bus recovery (bit-bang) ───────────────────────────────────────────
   // If a previous boot crashed mid-transaction, a slave may be holding SDA low
@@ -267,6 +275,7 @@ void setup()
 
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
+  skyHistorySetup();
 
   // ── Initial sensor reads ──────────────────────────────────────────────────
   if (sensorReady)     readSensor();
@@ -305,6 +314,11 @@ void loop()
     rainSensorLoop();
     historyAccumulateRain(rainIsWet());
   }
+
+  // Sky history hour clock – always runs (SQM/clear-sky tracking doesn't
+  // depend on the rain sensor); rain wet-time is only folded in above when
+  // deviceConfig.rainEnabled is true.
+  skyHistoryLoop();
 
   // Safety sensor UDP broadcast – periodic keep-alive + immediate on state change.
   rainSafetyBroadcastLoop();
@@ -357,6 +371,9 @@ void readSensor()
     skyConditions.getCloudCoverMean(),
     skyConditions.getCloudCoverPixel());
 
+  if (skyConditions.hasBrightnessData())
+    skyHistoryAccumulateCloud(skyConditions.getCloudCover(), skyConditions.getLux());
+
   broadcastThermalFrame();
   broadcastSensorState();
 
@@ -403,6 +420,7 @@ void readBrightness()
   } else {
     skyConditions.updateBrightness(lux);
     historyAccumulateBrightness(skyConditions.getLux(), skyConditions.getSqm());
+    skyHistoryAccumulateSqm(skyConditions.getSqm(), skyConditions.getLux());
     Debug.printf("Lux: %.4f  SQM: %.2f mag/arcsec^2\n",
       skyConditions.getLux(), skyConditions.getSqm());
 

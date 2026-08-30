@@ -50,6 +50,7 @@ The ASCOM Alpaca protocol is implemented directly using the Arduino `WebServer` 
 | `web_ui_handler.h/.cpp` | Arduino `WebServer` (port 80) + `WebSocketsServer` (port 81) |
 | `html_templates.h` | Inline HTML/CSS/JS generators for home, trends, and setup pages |
 | `history.h/.cpp` | Dual-resolution history ring buffers (30 s / 15 min buckets) |
+| `sky_history.h/.cpp` | Persistent 90-day hourly rain/SQM/clear-sky history (NVS-backed), backs the Sky History calendar page |
 | `mqtt_handler.h/.cpp` | MQTT client + Home Assistant autodiscovery (PubSubClient) |
 | `dht_sensor.h/.cpp` | Optional ambient sensor: DHT11/22, BMP180, BMP280, BME280 |
 | `rain_sensor.h/.cpp` | Two-pin relay rain/snow detection |
@@ -128,6 +129,24 @@ Two resolutions in `history.h/.cpp`:
 
 Each bucket stores avg/lo/hi for 8 metrics: sky temp, frame min/max, median, ambient, cloud cover, lux, SQM.  Served as JSON from `GET /history.json?minutes=N`.
 
+### Sky History Calendar
+
+`sky_history.h/.cpp` maintains five separate, NVS-persisted rings of `RAIN_HIST_RING_HOURS` (2160 = 90 days × 24 h) buckets, all indexed by `epochHour % RAIN_HIST_RING_HOURS`. Unlike the RAM-only buffers in `history.h`, these rings are written to NVS on every hour rollover so they survive reboot. The NVS namespace/keys are unchanged from the module's original rain-only version (`RAIN_HIST_NAMESPACE = "rainHist"`, key `wetSec`) so already-accumulated rain data survives the broadened scope; new rings use their own keys (`clearDay`, `clearNight`, `sqmAvg`, `sqmPeak`).
+
+| Ring | Type | Meaning |
+|------|------|---------|
+| wet-seconds | `uint16_t` (0–3600) | rain/snow wet time, gated on `deviceConfig.rainEnabled` |
+| clear-day-seconds | `uint16_t` (0–3600) | time with cloud cover < `clearCloudThreshold` while lux ≥ `nightLuxThreshold` |
+| clear-night-seconds | `uint16_t` (0–3600) | same, while lux < `nightLuxThreshold` |
+| SQM average | `int16_t` (mag/arcsec² × 100), sentinel `INT16_MIN` | average of night-only (lux < `nightLuxThreshold`) SQM samples that hour |
+| SQM peak | `int16_t` (mag/arcsec² × 100), sentinel `INT16_MIN` | darkest (highest) night SQM sample that hour |
+
+- The hour clock (`skyHistoryLoop()`, called unconditionally every `loop()`) requires a synced clock (`time(nullptr) >= RAIN_HIST_MIN_VALID_EPOCH`) and is otherwise a no-op; it advances regardless of `rainEnabled` so SQM/clear-sky tracking works without a rain sensor. `skyHistoryAccumulateCloud()` (called from `readSensor()`) and `skyHistoryAccumulateSqm()` (called from `readBrightness()`) feed the current hour's clear-sky and SQM accumulators independently of that tick, using their own elapsed-time deltas.
+- Day/night classification is a simple instantaneous lux threshold (`deviceConfig.nightLuxThreshold`), not true sunrise/sunset — twilight samples can land on either side.
+- A gap in operation (device off, or clock not yet synced) is zero/sentinel-filled for the missed hours rather than left undefined — the log only ever expresses "seconds observed" / "sample seen," so no reading is equivalent to no rain, no clear sky, and no SQM data.
+- Served as JSON from `GET /skyhistory.json?days=N` (N = 1–90): `rainSec`, `clearDaySec`, `clearNightSec`, `sqmAvg`, `sqmPeak` — hourly UTC buckets, oldest first, plus `t0Epoch`/`nowEpoch` so the browser can re-bucket into its own local calendar days. `sqmAvg`/`sqmPeak` entries are JSON `null` when no night sample landed in that hour.
+- The `/skyhistory` page (nav label "Sky History") renders a month-view calendar with a Rain / SQM (night) / Clear Sky mode toggle — each mode drives its own day-cell shading, labels, and monthly summary — plus prev/next navigation bounded to the 90-day window and a client-side CSV export (all metrics, regardless of the active mode) built from the already-fetched data.
+
 ### Persistent Configuration (`DeviceConfig`)
 
 All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (keys ≤ 15 chars).  Loaded in `setup()` before `configTime()` and the Alpaca server start so that `ntpServer` is available for the NTP call.
@@ -157,6 +176,8 @@ All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (
 | `rainEnabled` | `rainEn` | true |
 | `dhtType` | `dhtType` | 0 (disabled); 1=DHT11, 2=DHT22, 3=BMP180, 4=BMP280, 5=BME280 |
 | `bmp280Addr` | `bmp280Addr` | 0x76 |
+| `nightLuxThreshold` | `nightLux` | 1.0 lux |
+| `clearCloudThreshold` | `clearCloud` | 20.0 % |
 
 ### NTP
 
@@ -175,7 +196,7 @@ Implemented in `mqtt_handler.h/.cpp` using the bundled PubSubClient library.
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.6.0"
+  "ip": "192.168.x.x",  "version": "0.6.2"
 }
 ```
 

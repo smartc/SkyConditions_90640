@@ -71,6 +71,12 @@ void configLoad(DeviceConfig &cfg)
   if (cfg.safetyBcastIntervalSec < 5)  cfg.safetyBcastIntervalSec = 5;    // minimum 5 s
   if (cfg.safetyBcastPort == 0)        cfg.safetyBcastPort = RAIN_SAFETY_UDP_PORT_DEFAULT;
 
+  // Sky History thresholds
+  cfg.nightLuxThreshold   = prefs.getFloat("nightLux",    1.0f);
+  cfg.clearCloudThreshold = prefs.getFloat("clearCloud", 20.0f);
+  if (cfg.nightLuxThreshold < 0)                              cfg.nightLuxThreshold = 0;
+  if (cfg.clearCloudThreshold < 0 || cfg.clearCloudThreshold > 100) cfg.clearCloudThreshold = 20.0f;
+
   prefs.end();
 }
 
@@ -105,6 +111,8 @@ void configSave(const DeviceConfig &cfg)
   prefs.putBool  ("safetyBcastEn",   cfg.safetyBcastEnabled);
   prefs.putUShort("safetyBcastPort", cfg.safetyBcastPort);
   prefs.putUShort("safetyBcastSec",  cfg.safetyBcastIntervalSec);
+  prefs.putFloat ("nightLux",    cfg.nightLuxThreshold);
+  prefs.putFloat ("clearCloud",  cfg.clearCloudThreshold);
 
   prefs.end();
 }

@@ -10,6 +10,7 @@
 #include "html_templates.h"
 #include "config_store.h"
 #include "../sensors/history.h"
+#include "../sensors/sky_history.h"
 #include "../mqtt/mqtt_handler.h"
 #include "../sensors/rain_sensor.h"
 #include "../sensors/dht_sensor.h"
@@ -42,6 +43,12 @@ static uint8_t*      scaledBuf   = nullptr;    // allocated in PSRAM by initWebU
 static uint8_t       jpegOutBuf[48 * 1024];   // 48 KB – comfortable for 320×240 quality-80
 static size_t        jpegOutLen    = 0;
 static unsigned long lastJpegUpdate = 0;
+
+// Where scaledBuf ended up (or didn't) – surfaced on /setup and in the
+// /thermal.jpg error response so a PSRAM misconfiguration is diagnosable
+// remotely instead of just repeating "scaledBuf not allocated" in /console.
+enum ScaledBufState { SCALEDBUF_PSRAM, SCALEDBUF_INTERNAL, SCALEDBUF_FAILED };
+static ScaledBufState scaledBufState = SCALEDBUF_FAILED;
 
 // ---------------------------------------------------------------------------
 // fmt2jpg_cb output callback – writes JPEG chunks into jpegOutBuf.
@@ -124,6 +131,13 @@ void updateThermalSnapshot()
 
 static void handleThermalJpeg()
 {
+  if (scaledBufState == SCALEDBUF_FAILED) {
+    webUiServer.send(503, "text/plain",
+      "Thermal JPEG staging buffer (230 KB) failed to allocate from PSRAM or internal heap. "
+      "PSRAM is likely not enabled for this build. In Arduino IDE: Tools > PSRAM > OPI PSRAM, "
+      "then recompile and reflash. See /setup > Hardware for current status.");
+    return;
+  }
   if (jpegOutLen == 0) {
     webUiServer.send(503, "text/plain", "No thermal data yet");
     return;
@@ -212,6 +226,20 @@ static void handleHistoryJSON()
   historyStreamJSON(webUiServer, minutes);
 }
 
+static void handleSkyHistoryPage()
+{
+  webUiServer.send(200, "text/html", getSkyHistoryPage(deviceConfig.rainEnabled));
+}
+
+static void handleSkyHistoryJSON()
+{
+  int days = RAIN_HIST_DAYS;
+  if (webUiServer.hasArg("days"))
+    days = webUiServer.arg("days").toInt();
+  webUiServer.sendHeader("Connection", "close");
+  skyHistoryStreamJSON(webUiServer, days);
+}
+
 static void handleSaveConfig()
 {
   if (webUiServer.hasArg("sqmOffset"))
@@ -247,6 +275,10 @@ static void handleSaveConfig()
     deviceConfig.cloudPixelRegion = (uint8_t)(webUiServer.arg("cloudPxRgn").toInt() != 0 ? 1 : 0);
   if (webUiServer.hasArg("cloudEdge"))
     deviceConfig.cloudEdgeExclude = (uint8_t)constrain(webUiServer.arg("cloudEdge").toInt(), 0, 10);
+  if (webUiServer.hasArg("nightLux"))
+    deviceConfig.nightLuxThreshold = max(0.0f, webUiServer.arg("nightLux").toFloat());
+  if (webUiServer.hasArg("clearCloud"))
+    deviceConfig.clearCloudThreshold = constrain(webUiServer.arg("clearCloud").toFloat(), 0.0f, 100.0f);
 
   // MQTT
   deviceConfig.mqttEnabled = webUiServer.hasArg("mqttEnabled");
@@ -381,17 +413,27 @@ void initWebUI()
   const size_t scaledBytes = (size_t)SNAP_W * SNAP_H * 3;
   scaledBuf = (uint8_t*)heap_caps_malloc(scaledBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (scaledBuf) {
+    scaledBufState = SCALEDBUF_PSRAM;
     Debug.printf("scaledBuf: %u B in PSRAM\n", (unsigned)scaledBytes);
   } else {
-    // PSRAM unavailable – fall back to internal heap (only feasible at small scales).
+    // PSRAM unavailable – fall back to internal heap (only feasible at small scales;
+    // a 230 KB contiguous block is unlikely to succeed here once WiFi/BT are up).
     scaledBuf = (uint8_t*)malloc(scaledBytes);
+    scaledBufState = scaledBuf ? SCALEDBUF_INTERNAL : SCALEDBUF_FAILED;
     Debug.printf("scaledBuf: %u B in internal heap (PSRAM unavailable)\n", (unsigned)scaledBytes);
+    if (!scaledBuf) {
+      Debug.println("WARNING: scaledBuf allocation FAILED entirely (PSRAM + internal heap both "
+                     "unavailable) – thermal JPEG snapshots (/thermal.jpg) will not work. "
+                     "Enable PSRAM in Arduino IDE: Tools > PSRAM > OPI PSRAM, then reflash.");
+    }
   }
 
   webUiServer.on("/",             HTTP_GET,  handleRoot);
   webUiServer.on("/setup",        HTTP_GET,  handleSetup);
   webUiServer.on("/trends",       HTTP_GET,  handleTrends);
   webUiServer.on("/history.json", HTTP_GET,  handleHistoryJSON);
+  webUiServer.on("/skyhistory",      HTTP_GET,  handleSkyHistoryPage);
+  webUiServer.on("/skyhistory.json", HTTP_GET,  handleSkyHistoryJSON);
   webUiServer.on("/thermal.jpg",    HTTP_GET,  handleThermalJpeg);
   webUiServer.on("/thermalmatrix",  HTTP_GET,  handleThermalMatrix);
   webUiServer.on("/console",      HTTP_GET,  handleConsole);
@@ -473,4 +515,26 @@ void broadcastThermalFrame()
 uint8_t getWsClientCount()
 {
   return wsServer.connectedClients();
+}
+
+// Human-readable status of the thermal JPEG staging buffer, for /setup's
+// Hardware card. A FAILED result (PSRAM disabled/unavailable and the
+// internal-heap fallback too small to satisfy) means /thermal.jpg will
+// permanently 503 – see the matching warning text in handleThermalJpeg().
+String getScaledBufStatus()
+{
+  switch (scaledBufState) {
+    case SCALEDBUF_PSRAM:
+      return "OK – PSRAM";
+    case SCALEDBUF_INTERNAL:
+      return "OK – internal heap (PSRAM unavailable; not recommended long-term)";
+    default:
+      return "FAILED – PSRAM not available; enable Tools &gt; PSRAM &gt; OPI PSRAM "
+             "in Arduino IDE and reflash";
+  }
+}
+
+bool isScaledBufFailed()
+{
+  return scaledBufState == SCALEDBUF_FAILED;
 }

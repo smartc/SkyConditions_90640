@@ -2,7 +2,7 @@
 
 ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 infrared thermal camera and TSL2591 sky brightness sensor.  Provides a fully standards-compliant Alpaca API for sky temperature, cloud cover, sky brightness, and sky quality monitoring — plus a live thermal viewer and trend charts in the browser.
 
-**Current version: 0.6.0**
+**Current version: 0.6.2**
 
 ---
 
@@ -31,12 +31,14 @@ ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 in
 - **Browser UI** on port 80
   - Home page: current readings, live thermal image, dual cloud cover values, brightness, rain status, humidity
   - Trends page: 60-min and 24-h charts for all sensors
+  - Sky History page (`/skyhistory`): 90-day month calendar with Rain / SQM (night) / Clear Sky views — accumulated rain duration, night sky-quality average & peak, and day/night clear-sky hours — in the browser's local time zone, with CSV export
   - Setup page: full calibration, sensor enable/type selection, MQTT, NTP, network settings, WiFi scan & reconnect
   - Debug console (`/console`): live serial log with deduplication and copy button
 - **Raw thermal matrix endpoint** — `GET /thermalmatrix` returns the full 32×24 temperature array as JSON
 - **OTA firmware updates** via ElegantOTA at `/update`
 - **WiFi management** — scan for networks and reconnect without a full credential reset (Setup page → WiFi)
 - **History ring buffers**: 30-second buckets (60 min hi-res) + 15-minute buckets (24 h lo-res)
+- **Persistent sky history**: hourly rain wet-time, night SQM avg/peak, and day/night clear-sky-hours logs covering 90 days, survives reboot, backing the Sky History calendar
 - Persistent configuration in NVS flash (survives reboots)
 - Passes ASCOM Conform Universal 4.2.1 with **0 errors, 0 issues** on all three devices
 
@@ -224,6 +226,8 @@ UDP discovery (port 32227) runs in a dedicated FreeRTOS task pinned to Core 0 so
 |-----|---------|
 | `http://<ip>/` | Live status: temperatures, cloud cover, lux/SQM, rain, humidity, thermal image |
 | `http://<ip>/trends` | 60-min and 24-h trend charts |
+| `http://<ip>/skyhistory` | 90-day Sky History calendar (Rain / SQM / Clear Sky views) |
+| `http://<ip>/skyhistory.json?days=N` | Raw hourly rain/SQM/clear-sky JSON (N = 1–90) |
 | `http://<ip>/setup` | Configuration form |
 | `http://<ip>/console` | Live serial debug console |
 | `http://<ip>/thermal.jpg` | Latest thermal JPEG snapshot |
@@ -262,7 +266,7 @@ Enable in Setup → MQTT.  The device publishes to `<prefix>/state` every 30 sec
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.6.0"
+  "ip": "192.168.x.x",  "version": "0.6.2"
 }
 ```
 
@@ -294,6 +298,8 @@ The **Cloud Cover Method** toggle on the Setup page selects which value is repor
 | SQM Reference | 108000 lux | Lux level that maps to SQM 0.0 |
 | Cloud Clear Delta | 20 °C | Ambient−sky delta at which sky is 0% cloud |
 | Cloud Overcast Delta | 5 °C | Ambient−sky delta at which sky is 100% cloud |
+| Night Lux Threshold | 1.0 lux | Below this = "night" for Sky History SQM/clear-sky-night tracking |
+| Clear-Sky Cloud Threshold | 20% | Below this cloud cover = "clear" for Sky History tracking |
 | Cloud Cover Method | Mean | Selects mean or per-pixel value for Alpaca |
 | Per-Pixel Region | Centre FOV | Region for per-pixel method |
 | Edge Exclusion | 2 px | Pixels excluded per edge in Full Frame mode |
@@ -346,7 +352,8 @@ SkyConditions_90640/
     │   ├── sky_sensor            SkyConditions class — MLX90640, dual cloud cover, colormap
     │   ├── dht_sensor            Optional ambient sensor: DHT11/22, BMP180, BMP280, BME280
     │   ├── rain_sensor           Two-pin relay + RS485 Modbus rain/snow detection
-    │   └── history               Dual-resolution history ring buffers (30 s / 15 min)
+    │   ├── history               Dual-resolution history ring buffers (30 s / 15 min)
+    │   └── sky_history            Persistent 90-day hourly rain/SQM/clear-sky history (NVS-backed)
     ├── webserver/
     │   ├── web_ui_handler        HTTP server (port 80) + WebSocket server (port 81)
     │   └── html_templates        Inline HTML/CSS/JS for browser pages
