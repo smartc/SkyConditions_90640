@@ -13,9 +13,11 @@
 #if defined(BOARD_XIAO_SENSE)
   #define THERMAL_SDA_PIN   5    // GPIO5 = D4 pad on XIAO ESP32-S3 Sense
   #define THERMAL_SCL_PIN   6    // GPIO6 = D5 pad on XIAO ESP32-S3 Sense
+  #define BOARD_NAME        "Seeed XIAO ESP32-S3 Sense"
 #else
   #define THERMAL_SDA_PIN   8    // GPIO8 on ESP32-S3 Dev Module
   #define THERMAL_SCL_PIN   9    // GPIO9 on ESP32-S3 Dev Module
+  #define BOARD_NAME        "ESP32-S3 Dev Module"
 #endif
 #if defined(BOARD_XIAO_SENSE)
   #define THERMAL_I2C_FREQ  100000   // 100 kHz – XIAO header has no external pull-ups

@@ -496,6 +496,7 @@ inline String getSetupPage()
   html += "<div class='card'>\n";
   html += "<h2>Hardware</h2>\n";
   html += "<table><tr><th>Property</th><th>Value</th></tr>\n";
+  html += "<tr><td>Board</td><td>" BOARD_NAME " <span style='color:#636e72'>(compiled-in)</span></td></tr>\n";
   html += "<tr><td>Sensor</td><td>MLX90640 (" +
           String(SENSOR_COLS) + "×" + String(SENSOR_ROWS) + " pixels)</td></tr>\n";
   html += "<tr><td>I2C SDA Pin</td><td>" + String(THERMAL_SDA_PIN) + "</td></tr>\n";

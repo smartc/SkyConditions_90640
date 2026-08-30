@@ -72,6 +72,7 @@ void setup()
   Serial.begin(115200);
   delay(100);
   Debug.println("\nMLX90640 Sky Conditions Sensor – ASCOM Alpaca Driver v" MANUFACTURER_V);
+  Debug.println("Board (compiled-in): " BOARD_NAME);
 
   // ── I2C bus recovery (bit-bang) ───────────────────────────────────────────
   // If a previous boot crashed mid-transaction, a slave may be holding SDA low
