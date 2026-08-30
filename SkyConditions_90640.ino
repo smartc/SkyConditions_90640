@@ -27,7 +27,7 @@
 #include "src/sensors/dht_sensor.h"
 #include "src/sensors/rain_sensor.h"
 #include "src/sensors/history.h"
-#include "src/sensors/rain_history.h"
+#include "src/sensors/sky_history.h"
 #include "src/webserver/web_ui_handler.h"
 #include "src/mqtt/mqtt_handler.h"
 #include "src/safety/rain_safety_broadcast.h"
@@ -275,7 +275,7 @@ void setup()
 
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
-  rainHistorySetup();
+  skyHistorySetup();
 
   // ── Initial sensor reads ──────────────────────────────────────────────────
   if (sensorReady)     readSensor();
@@ -313,8 +313,12 @@ void loop()
   if (deviceConfig.rainEnabled) {
     rainSensorLoop();
     historyAccumulateRain(rainIsWet());
-    rainHistoryLoop();
   }
+
+  // Sky history hour clock – always runs (SQM/clear-sky tracking doesn't
+  // depend on the rain sensor); rain wet-time is only folded in above when
+  // deviceConfig.rainEnabled is true.
+  skyHistoryLoop();
 
   // Safety sensor UDP broadcast – periodic keep-alive + immediate on state change.
   rainSafetyBroadcastLoop();
@@ -367,6 +371,9 @@ void readSensor()
     skyConditions.getCloudCoverMean(),
     skyConditions.getCloudCoverPixel());
 
+  if (skyConditions.hasBrightnessData())
+    skyHistoryAccumulateCloud(skyConditions.getCloudCover(), skyConditions.getLux());
+
   broadcastThermalFrame();
   broadcastSensorState();
 
@@ -413,6 +420,7 @@ void readBrightness()
   } else {
     skyConditions.updateBrightness(lux);
     historyAccumulateBrightness(skyConditions.getLux(), skyConditions.getSqm());
+    skyHistoryAccumulateSqm(skyConditions.getSqm(), skyConditions.getLux());
     Debug.printf("Lux: %.4f  SQM: %.2f mag/arcsec^2\n",
       skyConditions.getLux(), skyConditions.getSqm());
 

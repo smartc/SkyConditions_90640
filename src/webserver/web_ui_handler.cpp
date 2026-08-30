@@ -10,7 +10,7 @@
 #include "html_templates.h"
 #include "config_store.h"
 #include "../sensors/history.h"
-#include "../sensors/rain_history.h"
+#include "../sensors/sky_history.h"
 #include "../mqtt/mqtt_handler.h"
 #include "../sensors/rain_sensor.h"
 #include "../sensors/dht_sensor.h"
@@ -228,7 +228,7 @@ static void handleHistoryJSON()
 
 static void handleRainHistoryPage()
 {
-  webUiServer.send(200, "text/html", getRainHistoryPage(deviceConfig.rainEnabled));
+  webUiServer.send(200, "text/html", getSkyHistoryPage(deviceConfig.rainEnabled));
 }
 
 static void handleRainHistoryJSON()
@@ -237,7 +237,7 @@ static void handleRainHistoryJSON()
   if (webUiServer.hasArg("days"))
     days = webUiServer.arg("days").toInt();
   webUiServer.sendHeader("Connection", "close");
-  rainHistoryStreamJSON(webUiServer, days);
+  skyHistoryStreamJSON(webUiServer, days);
 }
 
 static void handleSaveConfig()
@@ -275,6 +275,10 @@ static void handleSaveConfig()
     deviceConfig.cloudPixelRegion = (uint8_t)(webUiServer.arg("cloudPxRgn").toInt() != 0 ? 1 : 0);
   if (webUiServer.hasArg("cloudEdge"))
     deviceConfig.cloudEdgeExclude = (uint8_t)constrain(webUiServer.arg("cloudEdge").toInt(), 0, 10);
+  if (webUiServer.hasArg("nightLux"))
+    deviceConfig.nightLuxThreshold = max(0.0f, webUiServer.arg("nightLux").toFloat());
+  if (webUiServer.hasArg("clearCloud"))
+    deviceConfig.clearCloudThreshold = constrain(webUiServer.arg("clearCloud").toFloat(), 0.0f, 100.0f);
 
   // MQTT
   deviceConfig.mqttEnabled = webUiServer.hasArg("mqttEnabled");

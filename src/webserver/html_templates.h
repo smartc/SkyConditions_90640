@@ -68,12 +68,24 @@ inline String getCommonStyles()
     ".cal-cell.nodata { opacity:0.35; }\n"
     ".cal-cell .d { font-weight:bold; }\n"
     ".cal-cell .dur { font-size:0.72em; margin-top:2px; color:#dfe6e9; }\n"
+    ".cal-cell .dur2 { font-size:0.66em; margin-top:1px; color:#b2bec3; }\n"
     ".cal-cell.wet1 { background:#5a2626; }\n"
     ".cal-cell.wet2 { background:#8e3a2c; }\n"
     ".cal-cell.wet3 { background:#c0392b; }\n"
+    ".cal-cell.sqm1 { background:#6b4226; }\n"
+    ".cal-cell.sqm2 { background:#5a5a3a; }\n"
+    ".cal-cell.sqm3 { background:#2f6690; }\n"
+    ".cal-cell.sqm4 { background:#1a5fb4; }\n"
+    ".cal-cell.clr1 { background:#2d5016; }\n"
+    ".cal-cell.clr2 { background:#3d7a1f; }\n"
+    ".cal-cell.clr3 { background:#4caf50; }\n"
     ".cal-cell.today { outline:2px solid #4a90d9; outline-offset:-2px; }\n"
     ".cal-summary { margin-top:14px; text-align:center; color:#dfe6e9; font-size:1.05em; }\n"
-    ".cal-note { margin-top:10px; font-size:0.78em; color:#636e72; text-align:center; }\n";
+    ".cal-note { margin-top:10px; font-size:0.78em; color:#636e72; text-align:center; }\n"
+    ".cal-legend { margin-top:10px; text-align:center; font-size:0.75em; color:#8899aa; }\n"
+    ".cal-legend span { display:inline-block; margin:0 6px; }\n"
+    ".cal-legend i { display:inline-block; width:10px; height:10px; border-radius:2px;"
+                    " vertical-align:middle; margin-right:3px; }\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +112,7 @@ inline String getNavBar()
     "<a href='/'>Home</a>\n"
     "<a href='/setup'>Setup</a>\n"
     "<a href='/trends'>Trends</a>\n"
-    "<a href='/rainhistory'>Rain History</a>\n"
+    "<a href='/rainhistory'>Sky History</a>\n"
     "<a href='/console'>Console</a>\n"
     "<a href='/update' class='warn'>Update</a>\n"
     "</div>\n";
@@ -556,6 +568,19 @@ inline String getSetupPage()
           "<td><input type='number' name='cloudOvercast' step='0.5' value='" +
           String(deviceConfig.cloudOvercastDelta, 1) + "' style='" + inpStyle + "'></td>"
           "<td>Ambient \u2212 Sky \u2264 this \u2192 100\u202F% cloud cover (overcast)</td></tr>\n";
+
+  // ── Sky History ────────────────────────────────────────────────────────
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Sky History (/rainhistory calendar)</th></tr>\n";
+
+  html += "<tr><td>Night Lux Threshold (lux)</td>"
+          "<td><input type='number' name='nightLux' step='0.1' min='0' value='" +
+          String(deviceConfig.nightLuxThreshold, 1) + "' style='" + inpStyle + "'></td>"
+          "<td>Lux below this counts as \"night\" for SQM and night clear-sky-hours tracking</td></tr>\n";
+
+  html += "<tr><td>Clear-Sky Cloud Threshold (%)</td>"
+          "<td><input type='number' name='clearCloud' step='1' min='0' max='100' value='" +
+          String(deviceConfig.clearCloudThreshold, 0) + "' style='" + inpStyle + "'></td>"
+          "<td>Cloud cover below this counts as \"clear\" for clear-sky-hours tracking</td></tr>\n";
 
   // ── Imaging ──────────────────────────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>Imaging</th></tr>\n";
@@ -1148,22 +1173,20 @@ setInterval(loadData, 30000);
 }
 
 // ---------------------------------------------------------------------------
-// Rain History page – 90-day calendar of accumulated wet time per day
+// Sky History page – 90-day calendar of rain, night SQM, and clear-sky hours
 // ---------------------------------------------------------------------------
-inline String getRainHistoryPage(bool rainEnabled)
+inline String getSkyHistoryPage(bool rainEnabled)
 {
-  String html = getPageHeader("Sky Conditions – Rain History");
-  html += "<h1>Rain History</h1>\n";
+  String html = getPageHeader("Sky Conditions – Sky History");
+  html += "<h1>Sky History</h1>\n";
   html += getNavBar();
 
-  if (!rainEnabled) {
-    html += "<div class='card'>Rain sensor is disabled in <a href='/setup'>Setup</a> – "
-            "enable it to start logging rain history.</div>\n";
-    html += "</body></html>";
-    return html;
-  }
-
   html += "<div class='card'>\n";
+  html += "<div style='text-align:center;margin-bottom:10px'>\n"
+          "  <button class='tbtn act' id='modeRain'  onclick=\"setMode('rain',this)\">Rain</button>\n"
+          "  <button class='tbtn'     id='modeSqm'   onclick=\"setMode('sqm',this)\">SQM (night)</button>\n"
+          "  <button class='tbtn'     id='modeClear' onclick=\"setMode('clear',this)\">Clear Sky</button>\n"
+          "</div>\n";
   html += "<div class='cal-nav'>\n"
           "  <button id='calPrev' onclick='navMonth(-1)'>&#8249;</button>\n"
           "  <div class='cal-title' id='calTitle'>&nbsp;</div>\n"
@@ -1172,11 +1195,17 @@ inline String getRainHistoryPage(bool rainEnabled)
   html += "<div class='cal-grid' id='calDow'></div>\n";
   html += "<div class='cal-grid' id='calGrid' style='margin-top:6px'></div>\n";
   html += "<div class='cal-summary' id='calSummary'>Loading&hellip;</div>\n";
+  html += "<div class='cal-legend' id='calLegend'></div>\n";
   html += "<div class='cal-note'>Days and durations are shown in your browser's local time zone. "
-          "Recording gaps (device powered off or clock not yet synced) appear as no rain.</div>\n";
+          "Recording gaps (device powered off or clock not yet synced) appear as no data. "
+          "Night/clear-sky thresholds are configurable on the Setup page.</div>\n";
   html += "<div style='text-align:center;margin-top:12px'>"
           "<button class='tbtn' onclick='exportCsv()'>&#8681; Export CSV</button></div>\n";
   html += "</div>\n";
+
+  html += "<script>const RAIN_SENSOR_ENABLED = ";
+  html += (rainEnabled ? "true" : "false");
+  html += ";</script>\n";
 
   html += R"rawjs(
 <script>
@@ -1184,49 +1213,58 @@ const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MONTHS = ['January','February','March','April','May','June','July',
                  'August','September','October','November','December'];
 
-let dayTotals = {};      // 'YYYY-MM-DD' (local) -> seconds wet
+let dayStats = {};       // 'YYYY-MM-DD' (local) -> {rain, clearDay, clearNight, sqmAvgs:[], sqmPeaks:[]}
 let minDateKey = null;   // earliest local date covered by fetched data
 let maxDateKey = null;   // latest local date covered (= today, server clock)
 let viewYear, viewMonth; // currently displayed month (0-based month)
+let mode = 'rain';       // 'rain' | 'sqm' | 'clear'
 
 function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 function dateKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
 
 function fmtDur(sec) {
-  if (!sec || sec <= 0) return '';
+  if (!sec || sec <= 0) return '0m';
   const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
   return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
 }
 
-function wetClass(sec) {
-  if (!sec || sec <= 0) return '';
-  if (sec < 1800) return 'wet1';
-  if (sec < 7200) return 'wet2';
-  return 'wet3';
+function wetClass(sec)  { if (sec < 1800)  return 'wet1'; if (sec < 7200)  return 'wet2'; return 'wet3'; }
+function clearClass(sec){ if (sec < 7200)  return 'clr1'; if (sec < 21600) return 'clr2'; return 'clr3'; }
+function sqmClass(avg)  { if (avg < 18)    return 'sqm1'; if (avg < 20)    return 'sqm2';
+                           if (avg < 21.5) return 'sqm3'; return 'sqm4'; }
+
+function setMode(m, btn) {
+  mode = m;
+  document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('act'));
+  btn.classList.add('act');
+  renderMonth();
 }
 
 function loadData() {
   fetch('/rainhistory.json?days=90')
     .then(r => r.json())
     .then(d => {
-      if (!d.synced || !d.hours || d.hours.length === 0) {
+      if (!d.synced || !d.rainSec || d.rainSec.length === 0) {
         document.getElementById('calSummary').textContent =
           'No data yet – device clock is not synced.';
         return;
       }
-      dayTotals = {};
+      dayStats = {};
       const t0 = d.t0Epoch * 1000;
-      for (let i = 0; i < d.hours.length; i++) {
-        const dt = new Date(t0 + i * 3600000);
-        const key = dateKey(dt);
-        dayTotals[key] = (dayTotals[key] || 0) + d.hours[i];
+      for (let i = 0; i < d.rainSec.length; i++) {
+        const key = dateKey(new Date(t0 + i * 3600000));
+        if (!dayStats[key]) dayStats[key] = { rain: 0, clearDay: 0, clearNight: 0, sqmAvgs: [], sqmPeaks: [] };
+        const s = dayStats[key];
+        s.rain       += d.rainSec[i];
+        s.clearDay   += d.clearDaySec[i];
+        s.clearNight += d.clearNightSec[i];
+        if (d.sqmAvg[i]  !== null) s.sqmAvgs.push(d.sqmAvg[i]);
+        if (d.sqmPeak[i] !== null) s.sqmPeaks.push(d.sqmPeak[i]);
       }
-      const first = new Date(t0);
-      const last  = new Date(d.nowEpoch * 1000);
-      minDateKey = dateKey(first);
-      maxDateKey = dateKey(last);
-      viewYear  = last.getFullYear();
-      viewMonth = last.getMonth();
+      minDateKey = dateKey(new Date(t0));
+      maxDateKey = dateKey(new Date(d.nowEpoch * 1000));
+      viewYear  = new Date(d.nowEpoch * 1000).getFullYear();
+      viewMonth = new Date(d.nowEpoch * 1000).getMonth();
       renderMonth();
     })
     .catch(e => {
@@ -1239,6 +1277,44 @@ function navMonth(delta) {
   if (viewMonth < 0)  { viewMonth = 11; viewYear--; }
   if (viewMonth > 11) { viewMonth = 0;  viewYear++; }
   renderMonth();
+}
+
+// Builds one day cell's class + inner HTML for the current mode, and folds
+// its contribution into the running month accumulator (accA/accB/accCount).
+function buildCell(day, key, todayKey, acc) {
+  const inWindow = key >= minDateKey && key <= maxDateKey;
+  let cls = 'cal-cell';
+  let lines = '';
+
+  if (!inWindow) {
+    cls += ' nodata';
+  } else {
+    const s = dayStats[key] || { rain: 0, clearDay: 0, clearNight: 0, sqmAvgs: [], sqmPeaks: [] };
+    if (mode === 'rain') {
+      if (s.rain > 0) {
+        cls += ' ' + wetClass(s.rain);
+        lines = "<div class='dur'>" + fmtDur(s.rain) + '</div>';
+        acc.count++; acc.a += s.rain;
+      }
+    } else if (mode === 'sqm') {
+      if (s.sqmAvgs.length) {
+        const avg  = s.sqmAvgs.reduce((x, y) => x + y, 0) / s.sqmAvgs.length;
+        const peak = Math.max(...s.sqmPeaks);
+        cls += ' ' + sqmClass(avg);
+        lines = "<div class='dur'>" + avg.toFixed(1) + "</div><div class='dur2'>pk " + peak.toFixed(1) + '</div>';
+        acc.count++; acc.a += avg; acc.b = Math.max(acc.b, peak);
+      }
+    } else { // clear
+      if (s.clearDay > 0 || s.clearNight > 0) {
+        cls += ' ' + clearClass(s.clearDay + s.clearNight);
+        lines = "<div class='dur'>D " + fmtDur(s.clearDay) + "</div><div class='dur2'>N " + fmtDur(s.clearNight) + '</div>';
+      }
+      acc.a += s.clearDay; acc.b += s.clearNight;
+    }
+  }
+  if (key === todayKey) cls += ' today';
+
+  return "<div class='" + cls + "'><div class='d'>" + day + '</div>' + lines + '</div>';
 }
 
 function renderMonth() {
@@ -1255,26 +1331,33 @@ function renderMonth() {
   let cells = '';
   for (let i = 0; i < startDow; i++) cells += "<div class='cal-cell empty'></div>";
 
-  let rainDays = 0, totalSec = 0;
+  const acc = { count: 0, a: 0, b: 0 };
   for (let day = 1; day <= daysInMonth; day++) {
-    const d   = new Date(viewYear, viewMonth, day);
-    const key = dateKey(d);
-    const inWindow = key >= minDateKey && key <= maxDateKey;
-    const sec = inWindow ? (dayTotals[key] || 0) : null;
-    if (sec > 0) { rainDays++; totalSec += sec; }
-
-    let cls = 'cal-cell';
-    if (!inWindow) cls += ' nodata';
-    else if (sec > 0) cls += ' ' + wetClass(sec);
-    if (key === todayKey) cls += ' today';
-
-    cells += "<div class='" + cls + "'><div class='d'>" + day + '</div>' +
-             (sec > 0 ? "<div class='dur'>" + fmtDur(sec) + '</div>' : '') + '</div>';
+    const key = dateKey(new Date(viewYear, viewMonth, day));
+    cells += buildCell(day, key, todayKey, acc);
   }
 
   document.getElementById('calGrid').innerHTML = cells;
-  document.getElementById('calSummary').textContent =
-    'Rain days: ' + rainDays + '     Total: ' + (totalSec > 0 ? fmtDur(totalSec) : '0m');
+
+  let summary;
+  if (mode === 'rain') {
+    summary = 'Rain days: ' + acc.count + '     Total: ' + fmtDur(acc.a);
+    if (!RAIN_SENSOR_ENABLED) summary += '  (rain sensor disabled in Setup)';
+  } else if (mode === 'sqm') {
+    summary = acc.count
+      ? ('Nights with data: ' + acc.count + '     Avg: ' + (acc.a / acc.count).toFixed(2) + '     Best: ' + acc.b.toFixed(2))
+      : 'No night SQM data this month';
+  } else {
+    summary = 'Clear (day): ' + fmtDur(acc.a) + '     Clear (night): ' + fmtDur(acc.b);
+  }
+  document.getElementById('calSummary').textContent = summary;
+
+  const legends = {
+    rain:  "<span><i style='background:#5a2626'></i>&lt;30m</span><span><i style='background:#8e3a2c'></i>30m–2h</span><span><i style='background:#c0392b'></i>&gt;2h</span>",
+    sqm:   "<span><i style='background:#6b4226'></i>&lt;18</span><span><i style='background:#5a5a3a'></i>18–20</span><span><i style='background:#2f6690'></i>20–21.5</span><span><i style='background:#1a5fb4'></i>&#8805;21.5</span>",
+    clear: "<span><i style='background:#2d5016'></i>&lt;2h</span><span><i style='background:#3d7a1f'></i>2–6h</span><span><i style='background:#4caf50'></i>&gt;6h</span>"
+  };
+  document.getElementById('calLegend').innerHTML = legends[mode];
 
   document.getElementById('calPrev').disabled =
     (viewYear + '-' + pad2(viewMonth + 1)) <= minDateKey.slice(0, 7);
@@ -1283,17 +1366,19 @@ function renderMonth() {
 }
 
 function exportCsv() {
-  const keys = Object.keys(dayTotals).sort();
-  let csv = 'date,wet_seconds,wet_hms\n';
+  const keys = Object.keys(dayStats).sort();
+  let csv = 'date,rain_seconds,rain_hms,clear_day_seconds,clear_night_seconds,sqm_avg,sqm_peak\n';
   for (const k of keys) {
-    const sec = dayTotals[k];
-    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-    csv += k + ',' + sec + ',' + h + ':' + pad2(m) + ':' + pad2(s) + '\n';
+    const s = dayStats[k];
+    const h = Math.floor(s.rain / 3600), m = Math.floor((s.rain % 3600) / 60), sec = s.rain % 60;
+    const avg  = s.sqmAvgs.length  ? (s.sqmAvgs.reduce((x, y) => x + y, 0) / s.sqmAvgs.length).toFixed(2) : '';
+    const peak = s.sqmPeaks.length ? Math.max(...s.sqmPeaks).toFixed(2) : '';
+    csv += [k, s.rain, h + ':' + pad2(m) + ':' + pad2(sec), s.clearDay, s.clearNight, avg, peak].join(',') + '\n';
   }
   const blob = new Blob([csv], { type: 'text/csv' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = 'rain_history.csv';
+  a.href = url; a.download = 'sky_history.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }

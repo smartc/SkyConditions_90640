@@ -56,6 +56,10 @@ struct DeviceConfig {
   bool     safetyBcastEnabled;       // false = disabled (default)
   uint16_t safetyBcastPort;          // UDP destination port (default 23435)
   uint16_t safetyBcastIntervalSec;   // seconds between keep-alive broadcasts (default 30)
+
+  // Sky History (rain/SQM/clear-sky calendar) thresholds
+  float    nightLuxThreshold;    // lux below this = "night" for SQM + clear-sky-night tracking
+  float    clearCloudThreshold;  // cloud cover % below this = "clear" for clear-sky-hours tracking
 };
 
 // Load settings from NVS; fills in defaults if keys are absent.
