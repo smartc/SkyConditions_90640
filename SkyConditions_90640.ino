@@ -72,7 +72,13 @@ void setup()
   Serial.begin(115200);
   delay(100);
   Debug.println("\nMLX90640 Sky Conditions Sensor – ASCOM Alpaca Driver v" MANUFACTURER_V);
-  Debug.println("Board (compiled-in): " BOARD_NAME);
+  Debug.println("Board (Arduino IDE selection): " IDE_BOARD_ID);
+#if defined(BOARD_AUTO_FALLBACK)
+  Debug.println("WARNING: board id not recognised – defaulted pinout profile to " BOARD_NAME
+                ". Verify I2C pins on /setup, or force a profile in config.h.");
+#else
+  Debug.println("Pinout profile (auto-detected): " BOARD_NAME);
+#endif
 
   // ── I2C bus recovery (bit-bang) ───────────────────────────────────────────
   // If a previous boot crashed mid-transaction, a slave may be holding SDA low

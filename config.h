@@ -2,12 +2,40 @@
 #define CONFIG_H
 
 // ── Board Selection ───────────────────────────────────────────────────────────
-// Uncomment the line matching your target board.
-// With ESP32S3 Dev Module:  SDA = GPIO8, SCL = GPIO9.
-// With XIAO ESP32-S3 Sense: external I2C pads are GPIO5 (SDA) / GPIO6 (SCL).
-//   Using D-number macros is unreliable across board definitions; numeric GPIOs are used.
-#define BOARD_XIAO_SENSE     // Seeed XIAO ESP32-S3 Sense
-// #define BOARD_ESP32S3_DEV // ESP32-S3 Dev Module (comment the line above first)
+// Auto-detected from Tools > Board in the Arduino IDE, via the board macro the
+// esp32 core defines at compile time for whichever board is currently
+// selected there — so this no longer has to be hand-toggled to match what's
+// actually flashed (which is how it went stale in the first place).
+//
+// To force a profile regardless of auto-detection (e.g. a board variant the
+// check below doesn't recognise), uncomment exactly one line here — it takes
+// priority over the auto-detect block that follows.
+// #define BOARD_XIAO_SENSE
+// #define BOARD_ESP32S3_DEV
+
+#if !defined(BOARD_XIAO_SENSE) && !defined(BOARD_ESP32S3_DEV)
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    #define BOARD_XIAO_SENSE
+  #else
+    // Falls back to the Dev Module pinout for ESP32S3 Dev Module and for any
+    // board the check above doesn't recognise. BOARD_AUTO_FALLBACK flags the
+    // latter case so it's visible (Setup page / boot log) rather than a
+    // silent guess — compare IDE_BOARD_ID there against what you expect.
+    #define BOARD_ESP32S3_DEV
+    #if !defined(ARDUINO_ESP32S3_DEV)
+      #define BOARD_AUTO_FALLBACK
+    #endif
+  #endif
+#endif
+
+// Raw board id the Arduino build system passes in for whatever is selected
+// in Tools > Board – always accurate, needs no maintenance as boards are
+// added. ARDUINO_BOARD is a standard macro across Arduino cores.
+#if defined(ARDUINO_BOARD)
+  #define IDE_BOARD_ID  ARDUINO_BOARD
+#else
+  #define IDE_BOARD_ID  "unknown (ARDUINO_BOARD not defined by this core)"
+#endif
 
 // MLX90640 I2C Configuration
 #if defined(BOARD_XIAO_SENSE)

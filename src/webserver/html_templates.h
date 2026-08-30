@@ -496,7 +496,15 @@ inline String getSetupPage()
   html += "<div class='card'>\n";
   html += "<h2>Hardware</h2>\n";
   html += "<table><tr><th>Property</th><th>Value</th></tr>\n";
-  html += "<tr><td>Board</td><td>" BOARD_NAME " <span style='color:#636e72'>(compiled-in)</span></td></tr>\n";
+  html += "<tr><td>Board (Arduino IDE selection)</td><td>" IDE_BOARD_ID "</td></tr>\n";
+  html += "<tr><td>Pinout Profile</td><td>" BOARD_NAME
+#if defined(BOARD_AUTO_FALLBACK)
+          " <span style='color:#e17055'>&#9888; unrecognized board id above – "
+          "defaulted to this profile; verify pins below, or force one in config.h</span>"
+#else
+          " <span style='color:#636e72'>(auto-detected)</span>"
+#endif
+          "</td></tr>\n";
   html += "<tr><td>Sensor</td><td>MLX90640 (" +
           String(SENSOR_COLS) + "×" + String(SENSOR_ROWS) + " pixels)</td></tr>\n";
   html += "<tr><td>I2C SDA Pin</td><td>" + String(THERMAL_SDA_PIN) + "</td></tr>\n";
