@@ -226,12 +226,12 @@ static void handleHistoryJSON()
   historyStreamJSON(webUiServer, minutes);
 }
 
-static void handleRainHistoryPage()
+static void handleSkyHistoryPage()
 {
   webUiServer.send(200, "text/html", getSkyHistoryPage(deviceConfig.rainEnabled));
 }
 
-static void handleRainHistoryJSON()
+static void handleSkyHistoryJSON()
 {
   int days = RAIN_HIST_DAYS;
   if (webUiServer.hasArg("days"))
@@ -432,8 +432,8 @@ void initWebUI()
   webUiServer.on("/setup",        HTTP_GET,  handleSetup);
   webUiServer.on("/trends",       HTTP_GET,  handleTrends);
   webUiServer.on("/history.json", HTTP_GET,  handleHistoryJSON);
-  webUiServer.on("/rainhistory",      HTTP_GET,  handleRainHistoryPage);
-  webUiServer.on("/rainhistory.json", HTTP_GET,  handleRainHistoryJSON);
+  webUiServer.on("/skyhistory",      HTTP_GET,  handleSkyHistoryPage);
+  webUiServer.on("/skyhistory.json", HTTP_GET,  handleSkyHistoryJSON);
   webUiServer.on("/thermal.jpg",    HTTP_GET,  handleThermalJpeg);
   webUiServer.on("/thermalmatrix",  HTTP_GET,  handleThermalMatrix);
   webUiServer.on("/console",      HTTP_GET,  handleConsole);

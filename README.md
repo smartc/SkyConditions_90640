@@ -31,7 +31,7 @@ ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 in
 - **Browser UI** on port 80
   - Home page: current readings, live thermal image, dual cloud cover values, brightness, rain status, humidity
   - Trends page: 60-min and 24-h charts for all sensors
-  - Sky History page (`/rainhistory`): 90-day month calendar with Rain / SQM (night) / Clear Sky views — accumulated rain duration, night sky-quality average & peak, and day/night clear-sky hours — in the browser's local time zone, with CSV export
+  - Sky History page (`/skyhistory`): 90-day month calendar with Rain / SQM (night) / Clear Sky views — accumulated rain duration, night sky-quality average & peak, and day/night clear-sky hours — in the browser's local time zone, with CSV export
   - Setup page: full calibration, sensor enable/type selection, MQTT, NTP, network settings, WiFi scan & reconnect
   - Debug console (`/console`): live serial log with deduplication and copy button
 - **Raw thermal matrix endpoint** — `GET /thermalmatrix` returns the full 32×24 temperature array as JSON
@@ -226,8 +226,8 @@ UDP discovery (port 32227) runs in a dedicated FreeRTOS task pinned to Core 0 so
 |-----|---------|
 | `http://<ip>/` | Live status: temperatures, cloud cover, lux/SQM, rain, humidity, thermal image |
 | `http://<ip>/trends` | 60-min and 24-h trend charts |
-| `http://<ip>/rainhistory` | 90-day Sky History calendar (Rain / SQM / Clear Sky views) |
-| `http://<ip>/rainhistory.json?days=N` | Raw hourly rain/SQM/clear-sky JSON (N = 1–90) |
+| `http://<ip>/skyhistory` | 90-day Sky History calendar (Rain / SQM / Clear Sky views) |
+| `http://<ip>/skyhistory.json?days=N` | Raw hourly rain/SQM/clear-sky JSON (N = 1–90) |
 | `http://<ip>/setup` | Configuration form |
 | `http://<ip>/console` | Live serial debug console |
 | `http://<ip>/thermal.jpg` | Latest thermal JPEG snapshot |

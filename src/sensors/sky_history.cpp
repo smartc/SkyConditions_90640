@@ -2,7 +2,7 @@
  * sky_history.cpp
  *
  * Persistent hourly sky-conditions ring buffers, 90 days deep, backing the
- * /rainhistory calendar page. See sky_history.h for the storage model.
+ * /skyhistory calendar page. See sky_history.h for the storage model.
  */
 
 #include "sky_history.h"

@@ -8,7 +8,7 @@
  * sky_history.h
  *
  * Persistent per-hour sky-conditions log covering the last RAIN_HIST_DAYS
- * (90) days, used to render a month-view calendar (see /rainhistory page).
+ * (90) days, used to render a month-view calendar (see /skyhistory page).
  * Unlike history.h's RAM-only ring buffers, this survives reboot: all rings
  * are written to NVS on every hour rollover.
  *

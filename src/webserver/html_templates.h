@@ -112,7 +112,7 @@ inline String getNavBar()
     "<a href='/'>Home</a>\n"
     "<a href='/setup'>Setup</a>\n"
     "<a href='/trends'>Trends</a>\n"
-    "<a href='/rainhistory'>Sky History</a>\n"
+    "<a href='/skyhistory'>Sky History</a>\n"
     "<a href='/console'>Console</a>\n"
     "<a href='/update' class='warn'>Update</a>\n"
     "</div>\n";
@@ -570,7 +570,7 @@ inline String getSetupPage()
           "<td>Ambient \u2212 Sky \u2264 this \u2192 100\u202F% cloud cover (overcast)</td></tr>\n";
 
   // ── Sky History ────────────────────────────────────────────────────────
-  html += "<tr><th colspan='3' style='background:#0a2a50'>Sky History (/rainhistory calendar)</th></tr>\n";
+  html += "<tr><th colspan='3' style='background:#0a2a50'>Sky History (/skyhistory calendar)</th></tr>\n";
 
   html += "<tr><td>Night Lux Threshold (lux)</td>"
           "<td><input type='number' name='nightLux' step='0.1' min='0' value='" +
@@ -1241,7 +1241,7 @@ function setMode(m, btn) {
 }
 
 function loadData() {
-  fetch('/rainhistory.json?days=90')
+  fetch('/skyhistory.json?days=90')
     .then(r => r.json())
     .then(d => {
       if (!d.synced || !d.rainSec || d.rainSec.length === 0) {
