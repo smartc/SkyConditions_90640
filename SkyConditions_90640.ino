@@ -27,6 +27,7 @@
 #include "src/sensors/dht_sensor.h"
 #include "src/sensors/rain_sensor.h"
 #include "src/sensors/history.h"
+#include "src/sensors/rain_history.h"
 #include "src/webserver/web_ui_handler.h"
 #include "src/mqtt/mqtt_handler.h"
 #include "src/safety/rain_safety_broadcast.h"
@@ -267,6 +268,7 @@ void setup()
 
   // ── History ring buffers ──────────────────────────────────────────────────
   historySetup();
+  rainHistorySetup();
 
   // ── Initial sensor reads ──────────────────────────────────────────────────
   if (sensorReady)     readSensor();
@@ -304,6 +306,7 @@ void loop()
   if (deviceConfig.rainEnabled) {
     rainSensorLoop();
     historyAccumulateRain(rainIsWet());
+    rainHistoryLoop();
   }
 
   // Safety sensor UDP broadcast – periodic keep-alive + immediate on state change.

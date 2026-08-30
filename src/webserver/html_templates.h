@@ -51,7 +51,29 @@ inline String getCommonStyles()
     ".med-temp  { color: #55efc4; }\n"
     ".amb-temp  { color: #ffeaa7; }\n"
     "#thermal-canvas { display: block; margin: 0 auto; image-rendering: pixelated; border-radius: 4px; }\n"
-    "#ws-status { font-size: 0.8em; color: #636e72; margin-top: 6px; text-align: center; }\n";
+    "#ws-status { font-size: 0.8em; color: #636e72; margin-top: 6px; text-align: center; }\n"
+    ".cal-nav { display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:14px; }\n"
+    ".cal-nav button { background:#0f3460; color:#e0e0e0; border:none; border-radius:4px;"
+                      " padding:6px 14px; cursor:pointer; font-size:1em; }\n"
+    ".cal-nav button:hover:not(:disabled) { background:#1a4a8a; }\n"
+    ".cal-nav button:disabled { opacity:0.3; cursor:default; }\n"
+    ".cal-title { font-size:1.3em; min-width:200px; text-align:center; }\n"
+    ".cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }\n"
+    ".cal-dow { text-align:center; color:#74b9ff; font-size:0.78em; text-transform:uppercase;"
+               " padding-bottom:4px; }\n"
+    ".cal-cell { aspect-ratio:1/1; border-radius:6px; background:#0f3460;"
+                " display:flex; flex-direction:column; align-items:center; justify-content:center;"
+                " font-size:0.85em; }\n"
+    ".cal-cell.empty { background:transparent; }\n"
+    ".cal-cell.nodata { opacity:0.35; }\n"
+    ".cal-cell .d { font-weight:bold; }\n"
+    ".cal-cell .dur { font-size:0.72em; margin-top:2px; color:#dfe6e9; }\n"
+    ".cal-cell.wet1 { background:#5a2626; }\n"
+    ".cal-cell.wet2 { background:#8e3a2c; }\n"
+    ".cal-cell.wet3 { background:#c0392b; }\n"
+    ".cal-cell.today { outline:2px solid #4a90d9; outline-offset:-2px; }\n"
+    ".cal-summary { margin-top:14px; text-align:center; color:#dfe6e9; font-size:1.05em; }\n"
+    ".cal-note { margin-top:10px; font-size:0.78em; color:#636e72; text-align:center; }\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +100,7 @@ inline String getNavBar()
     "<a href='/'>Home</a>\n"
     "<a href='/setup'>Setup</a>\n"
     "<a href='/trends'>Trends</a>\n"
+    "<a href='/rainhistory'>Rain History</a>\n"
     "<a href='/console'>Console</a>\n"
     "<a href='/update' class='warn'>Update</a>\n"
     "</div>\n";
@@ -1103,6 +1126,166 @@ function drawChart(id, series, timestamps, nowMs, yUnit) {
 // ── Boot & auto-refresh ────────────────────────────────────────────────────
 loadData();
 setInterval(loadData, 30000);
+</script>
+)rawjs";
+
+  html += "</body></html>";
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// Rain History page – 90-day calendar of accumulated wet time per day
+// ---------------------------------------------------------------------------
+inline String getRainHistoryPage(bool rainEnabled)
+{
+  String html = getPageHeader("Sky Conditions – Rain History");
+  html += "<h1>Rain History</h1>\n";
+  html += getNavBar();
+
+  if (!rainEnabled) {
+    html += "<div class='card'>Rain sensor is disabled in <a href='/setup'>Setup</a> – "
+            "enable it to start logging rain history.</div>\n";
+    html += "</body></html>";
+    return html;
+  }
+
+  html += "<div class='card'>\n";
+  html += "<div class='cal-nav'>\n"
+          "  <button id='calPrev' onclick='navMonth(-1)'>&#8249;</button>\n"
+          "  <div class='cal-title' id='calTitle'>&nbsp;</div>\n"
+          "  <button id='calNext' onclick='navMonth(1)'>&#8250;</button>\n"
+          "</div>\n";
+  html += "<div class='cal-grid' id='calDow'></div>\n";
+  html += "<div class='cal-grid' id='calGrid' style='margin-top:6px'></div>\n";
+  html += "<div class='cal-summary' id='calSummary'>Loading&hellip;</div>\n";
+  html += "<div class='cal-note'>Days and durations are shown in your browser's local time zone. "
+          "Recording gaps (device powered off or clock not yet synced) appear as no rain.</div>\n";
+  html += "<div style='text-align:center;margin-top:12px'>"
+          "<button class='tbtn' onclick='exportCsv()'>&#8681; Export CSV</button></div>\n";
+  html += "</div>\n";
+
+  html += R"rawjs(
+<script>
+const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONTHS = ['January','February','March','April','May','June','July',
+                 'August','September','October','November','December'];
+
+let dayTotals = {};      // 'YYYY-MM-DD' (local) -> seconds wet
+let minDateKey = null;   // earliest local date covered by fetched data
+let maxDateKey = null;   // latest local date covered (= today, server clock)
+let viewYear, viewMonth; // currently displayed month (0-based month)
+
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+function dateKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+
+function fmtDur(sec) {
+  if (!sec || sec <= 0) return '';
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
+}
+
+function wetClass(sec) {
+  if (!sec || sec <= 0) return '';
+  if (sec < 1800) return 'wet1';
+  if (sec < 7200) return 'wet2';
+  return 'wet3';
+}
+
+function loadData() {
+  fetch('/rainhistory.json?days=90')
+    .then(r => r.json())
+    .then(d => {
+      if (!d.synced || !d.hours || d.hours.length === 0) {
+        document.getElementById('calSummary').textContent =
+          'No data yet – device clock is not synced.';
+        return;
+      }
+      dayTotals = {};
+      const t0 = d.t0Epoch * 1000;
+      for (let i = 0; i < d.hours.length; i++) {
+        const dt = new Date(t0 + i * 3600000);
+        const key = dateKey(dt);
+        dayTotals[key] = (dayTotals[key] || 0) + d.hours[i];
+      }
+      const first = new Date(t0);
+      const last  = new Date(d.nowEpoch * 1000);
+      minDateKey = dateKey(first);
+      maxDateKey = dateKey(last);
+      viewYear  = last.getFullYear();
+      viewMonth = last.getMonth();
+      renderMonth();
+    })
+    .catch(e => {
+      document.getElementById('calSummary').textContent = 'Error: ' + e;
+    });
+}
+
+function navMonth(delta) {
+  viewMonth += delta;
+  if (viewMonth < 0)  { viewMonth = 11; viewYear--; }
+  if (viewMonth > 11) { viewMonth = 0;  viewYear++; }
+  renderMonth();
+}
+
+function renderMonth() {
+  document.getElementById('calTitle').textContent = MONTHS[viewMonth] + ' ' + viewYear;
+
+  const dowEl = document.getElementById('calDow');
+  dowEl.innerHTML = DOW.map(d => "<div class='cal-dow'>" + d + '</div>').join('');
+
+  const firstOfMonth = new Date(viewYear, viewMonth, 1);
+  const daysInMonth   = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const startDow      = firstOfMonth.getDay();
+  const todayKey      = dateKey(new Date());
+
+  let cells = '';
+  for (let i = 0; i < startDow; i++) cells += "<div class='cal-cell empty'></div>";
+
+  let rainDays = 0, totalSec = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d   = new Date(viewYear, viewMonth, day);
+    const key = dateKey(d);
+    const inWindow = key >= minDateKey && key <= maxDateKey;
+    const sec = inWindow ? (dayTotals[key] || 0) : null;
+    if (sec > 0) { rainDays++; totalSec += sec; }
+
+    let cls = 'cal-cell';
+    if (!inWindow) cls += ' nodata';
+    else if (sec > 0) cls += ' ' + wetClass(sec);
+    if (key === todayKey) cls += ' today';
+
+    cells += "<div class='" + cls + "'><div class='d'>" + day + '</div>' +
+             (sec > 0 ? "<div class='dur'>" + fmtDur(sec) + '</div>' : '') + '</div>';
+  }
+
+  document.getElementById('calGrid').innerHTML = cells;
+  document.getElementById('calSummary').textContent =
+    'Rain days: ' + rainDays + '     Total: ' + (totalSec > 0 ? fmtDur(totalSec) : '0m');
+
+  document.getElementById('calPrev').disabled =
+    (viewYear + '-' + pad2(viewMonth + 1)) <= minDateKey.slice(0, 7);
+  document.getElementById('calNext').disabled =
+    (viewYear + '-' + pad2(viewMonth + 1)) >= maxDateKey.slice(0, 7);
+}
+
+function exportCsv() {
+  const keys = Object.keys(dayTotals).sort();
+  let csv = 'date,wet_seconds,wet_hms\n';
+  for (const k of keys) {
+    const sec = dayTotals[k];
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    csv += k + ',' + sec + ',' + h + ':' + pad2(m) + ':' + pad2(s) + '\n';
+  }
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'rain_history.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+loadData();
+setInterval(loadData, 300000);
 </script>
 )rawjs";
 

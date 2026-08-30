@@ -10,6 +10,7 @@
 #include "html_templates.h"
 #include "config_store.h"
 #include "../sensors/history.h"
+#include "../sensors/rain_history.h"
 #include "../mqtt/mqtt_handler.h"
 #include "../sensors/rain_sensor.h"
 #include "../sensors/dht_sensor.h"
@@ -212,6 +213,20 @@ static void handleHistoryJSON()
   historyStreamJSON(webUiServer, minutes);
 }
 
+static void handleRainHistoryPage()
+{
+  webUiServer.send(200, "text/html", getRainHistoryPage(deviceConfig.rainEnabled));
+}
+
+static void handleRainHistoryJSON()
+{
+  int days = RAIN_HIST_DAYS;
+  if (webUiServer.hasArg("days"))
+    days = webUiServer.arg("days").toInt();
+  webUiServer.sendHeader("Connection", "close");
+  rainHistoryStreamJSON(webUiServer, days);
+}
+
 static void handleSaveConfig()
 {
   if (webUiServer.hasArg("sqmOffset"))
@@ -392,6 +407,8 @@ void initWebUI()
   webUiServer.on("/setup",        HTTP_GET,  handleSetup);
   webUiServer.on("/trends",       HTTP_GET,  handleTrends);
   webUiServer.on("/history.json", HTTP_GET,  handleHistoryJSON);
+  webUiServer.on("/rainhistory",      HTTP_GET,  handleRainHistoryPage);
+  webUiServer.on("/rainhistory.json", HTTP_GET,  handleRainHistoryJSON);
   webUiServer.on("/thermal.jpg",    HTTP_GET,  handleThermalJpeg);
   webUiServer.on("/thermalmatrix",  HTTP_GET,  handleThermalMatrix);
   webUiServer.on("/console",      HTTP_GET,  handleConsole);

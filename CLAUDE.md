@@ -50,6 +50,7 @@ The ASCOM Alpaca protocol is implemented directly using the Arduino `WebServer` 
 | `web_ui_handler.h/.cpp` | Arduino `WebServer` (port 80) + `WebSocketsServer` (port 81) |
 | `html_templates.h` | Inline HTML/CSS/JS generators for home, trends, and setup pages |
 | `history.h/.cpp` | Dual-resolution history ring buffers (30 s / 15 min buckets) |
+| `rain_history.h/.cpp` | Persistent 90-day hourly rain history (NVS-backed), backs the Rain History calendar page |
 | `mqtt_handler.h/.cpp` | MQTT client + Home Assistant autodiscovery (PubSubClient) |
 | `dht_sensor.h/.cpp` | Optional ambient sensor: DHT11/22, BMP180, BMP280, BME280 |
 | `rain_sensor.h/.cpp` | Two-pin relay rain/snow detection |
@@ -128,6 +129,15 @@ Two resolutions in `history.h/.cpp`:
 
 Each bucket stores avg/lo/hi for 8 metrics: sky temp, frame min/max, median, ambient, cloud cover, lux, SQM.  Served as JSON from `GET /history.json?minutes=N`.
 
+### Rain History Calendar
+
+`rain_history.h/.cpp` maintains a separate, NVS-persisted ring of `RAIN_HIST_RING_HOURS` (2160 = 90 days × 24 h) `uint16_t` buckets — seconds wet (0–3600) per epoch-hour, indexed by `epochHour % RAIN_HIST_RING_HOURS`.  Unlike the RAM-only buffers in `history.h`, this ring is written to NVS (namespace `"rainHist"`) on every hour rollover so it survives reboot.
+
+- Accumulation requires a synced clock (`time(nullptr) >= RAIN_HIST_MIN_VALID_EPOCH`); until then, `rainHistoryLoop()` is a no-op.
+- A gap in operation (device off, or clock not yet synced) is zero-filled for the missed hours rather than left undefined — the log only ever expresses "seconds observed wet," so no reading is equivalent to no rain.
+- Served as JSON from `GET /rainhistory.json?days=N` (N = 1–90): hourly UTC buckets, oldest first, plus `t0Epoch`/`nowEpoch` so the browser can re-bucket into its own local calendar days.
+- The `/rainhistory` page renders a month-view calendar (day cells shaded by accumulated duration, today outlined) with prev/next navigation bounded to the 90-day window, and a client-side CSV export built from the already-fetched data.
+
 ### Persistent Configuration (`DeviceConfig`)
 
 All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (keys ≤ 15 chars).  Loaded in `setup()` before `configTime()` and the Alpaca server start so that `ntpServer` is available for the NTP call.
@@ -175,7 +185,7 @@ Implemented in `mqtt_handler.h/.cpp` using the bundled PubSubClient library.
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.6.0"
+  "ip": "192.168.x.x",  "version": "0.6.1"
 }
 ```
 
