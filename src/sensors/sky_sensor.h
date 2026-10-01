@@ -84,6 +84,9 @@ private:
   // Raw frame – main-loop only.
   float _frame[SENSOR_PIXELS];
   float _sorted[SENSOR_PIXELS];  // scratch for median
+  // Scratch for fillPaletteIndices()'s 3x3 smoothing pass (display only –
+  // never read by ASCOM/cloud-cover code, which uses _frame directly).
+  mutable float _blurScratch[SENSOR_PIXELS];
 
   // Computed stats.
   float         _skyTemperature;

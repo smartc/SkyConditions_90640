@@ -264,6 +264,7 @@ static void handleSaveConfig()
       deviceConfig.heatmapFixedMax = hi;
     }
   }
+  deviceConfig.heatmapHotMarker = webUiServer.hasArg("heatHot");
   if (webUiServer.hasArg("tslInteg"))
     deviceConfig.tsl2591Integration = (uint8_t)constrain(webUiServer.arg("tslInteg").toInt(), 0, 5);
   if (webUiServer.hasArg("avgPeriod"))

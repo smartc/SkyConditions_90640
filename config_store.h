@@ -21,6 +21,7 @@ struct DeviceConfig {
   uint8_t  heatmapRangeMode;     // 0 = floating (anchored to cloud-cover deltas), 1 = fixed
   float    heatmapFixedMin;      // °C at the cold end of the palette in fixed mode
   float    heatmapFixedMax;      // °C at the warm end of the palette in fixed mode
+  bool     heatmapHotMarker;     // true = mark pixels above the hot threshold in magenta
 
   // Brightness sensor
   uint8_t  tsl2591Integration;   // TSL2591 integration time enum (0=100ms … 5=600ms)

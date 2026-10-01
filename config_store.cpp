@@ -19,6 +19,7 @@ void configLoad(DeviceConfig &cfg)
   cfg.heatmapRangeMode    = prefs.getUChar ("heatMode",    0);
   cfg.heatmapFixedMin     = prefs.getFloat ("heatMin",   -45.0f);
   cfg.heatmapFixedMax     = prefs.getFloat ("heatMax",    60.0f);
+  cfg.heatmapHotMarker    = prefs.getBool  ("heatHot",    false);
   if (cfg.heatmapRangeMode > 1) cfg.heatmapRangeMode = 0;
   if (cfg.heatmapFixedMax - cfg.heatmapFixedMin < 1.0f) {
     cfg.heatmapFixedMin = -45.0f;
@@ -102,6 +103,7 @@ void configSave(const DeviceConfig &cfg)
   prefs.putUChar ("heatMode",    cfg.heatmapRangeMode);
   prefs.putFloat ("heatMin",     cfg.heatmapFixedMin);
   prefs.putFloat ("heatMax",     cfg.heatmapFixedMax);
+  prefs.putBool  ("heatHot",     cfg.heatmapHotMarker);
   prefs.putUChar ("tslInteg",    cfg.tsl2591Integration);
   prefs.putDouble("avgPeriod",   cfg.averagePeriod);
   prefs.putString("location",    cfg.location);

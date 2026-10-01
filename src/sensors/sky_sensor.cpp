@@ -209,9 +209,37 @@ void SkyConditions::fillPaletteIndices(uint8_t *idx) const
   float coldEnd, range, hotAbove;
   getDisplayRange(coldEnd, range, hotAbove);
 
+  // Smooth a display-only copy of the frame with a 3x3 box average.  The
+  // MLX90640 reads each frame as two interleaved sub-frames that rarely match
+  // exactly, which shows up as a faint per-pixel checkerboard – most visible
+  // on an otherwise-uniform clear sky.  Averaging neighbours cancels it out.
+  // ASCOM readings and cloud cover read _frame directly and are unaffected.
+  for (int r = 0; r < SENSOR_ROWS; r++) {
+    for (int c = 0; c < SENSOR_COLS; c++) {
+      float sum = 0.0f;
+      int   n   = 0;
+      for (int dr = -1; dr <= 1; dr++) {
+        int rr = r + dr;
+        if (rr < 0 || rr >= SENSOR_ROWS) continue;
+        for (int dc = -1; dc <= 1; dc++) {
+          int cc = c + dc;
+          if (cc < 0 || cc >= SENSOR_COLS) continue;
+          sum += _frame[rr * SENSOR_COLS + cc];
+          n++;
+        }
+      }
+      _blurScratch[r * SENSOR_COLS + c] = sum / n;
+    }
+  }
+
   for (int i = 0; i < SENSOR_PIXELS; i++) {
-    if (HEATMAP_HOT_MARKER && _frame[i] > hotAbove) { idx[i] = HEATMAP_HOT_INDEX; continue; }
-    float t = (_frame[i] - coldEnd) / range;
+    // Genuine single-pixel extremes (e.g. the sun) are exempt from smoothing
+    // so they still clamp to the end colour (or show as the hot marker)
+    // instead of being diluted into their much colder neighbours.
+    bool  hot = _frame[i] > hotAbove;
+    if (hot && deviceConfig.heatmapHotMarker) { idx[i] = HEATMAP_HOT_INDEX; continue; }
+    float T = hot ? _frame[i] : _blurScratch[i];
+    float t = (T - coldEnd) / range;
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
     idx[i] = (uint8_t)lroundf(t * (HEATMAP_HOT_INDEX - 1));
