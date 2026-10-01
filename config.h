@@ -156,12 +156,23 @@
 // 10 → 320×240 px (~230 KB staging in PSRAM).  Requires PSRAM enabled in board settings.
 #define THERMAL_JPEG_SCALE  10
 
+// Heatmap palette (display only – cloud cover never uses these).
+// Palette index HEATMAP_HOT_INDEX (magenta) marks pixels above the hot
+// threshold: heatmapFixedMax in fixed mode, ambient + HEATMAP_HOT_MARGIN_C in
+// floating mode.  In fixed mode the blue→white sky palette runs from
+// heatmapFixedMin up to HEATMAP_WARM_START_C, then a white→yellow→orange→red
+// warm tail runs up to heatmapFixedMax.
+#define HEATMAP_HOT_INDEX     255
+#define HEATMAP_HOT_MARGIN_C  20.0f
+#define HEATMAP_WARM_START_C   0.0f
+
 // WebSocket binary frame layout (sent to browser)
 // Bytes  0-3:  float32 min temperature (full frame)
 // Bytes  4-7:  float32 max temperature (full frame)
 // Bytes  8-11: float32 median temperature (full frame)
 // Bytes 12-15: float32 sky temperature (center 50% FOV average)
-// Bytes 16-783: uint8  normalized pixel values [0..255]
+// Bytes 16-783: uint8  palette index per pixel: 0..254 = position on the
+//               heatmap display range, 255 = above the "hot" threshold
 #define WS_HEADER_SIZE      16
 #define WS_FRAME_SIZE       (WS_HEADER_SIZE + SENSOR_PIXELS)  // 784 bytes
 

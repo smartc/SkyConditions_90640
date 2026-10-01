@@ -66,16 +66,20 @@ public:
   // Fills a WebSocket binary frame buffer; buf must be >= WS_FRAME_SIZE bytes.
   void fillWebSocketBuffer(uint8_t *buf) const;
 
-  // Fills an RGB888 buffer (SENSOR_PIXELS * 3 bytes) with jet-colourmap colours.
-  // Matches the colourmap used by the live WebSocket canvas in the browser.
+  // Fills an RGB888 buffer (SENSOR_PIXELS * 3 bytes) with heatmap colours.
+  // Uses the same palette indices and heatmapColor() as the live canvas.
   void fillRGBBuffer(uint8_t *rgb888) const;
 
 private:
-  // Temperature mapped to palette position 0 (coldEnd) and the span to
-  // position 1.  Floating mode anchors to the cloud-cover deltas around
-  // ambient; fixed mode uses deviceConfig.heatmapFixedMin/Max.  Display only –
-  // cloud cover calculations are unaffected.
-  void getDisplayRange(float &coldEnd, float &range) const;
+  // Temperature mapped to palette position 0 (coldEnd), the span to the top of
+  // the palette, and the threshold above which pixels get HEATMAP_HOT_INDEX.
+  // Floating mode anchors to the cloud-cover deltas around ambient; fixed mode
+  // uses deviceConfig.heatmapFixedMin/Max.  Display only – cloud cover
+  // calculations are unaffected.
+  void getDisplayRange(float &coldEnd, float &range, float &hotAbove) const;
+
+  // Palette index (0..HEATMAP_HOT_INDEX) for each pixel of the current frame.
+  void fillPaletteIndices(uint8_t *idx) const;
 
   // Raw frame – main-loop only.
   float _frame[SENSOR_PIXELS];
@@ -110,5 +114,10 @@ private:
 
 // Singleton shared between the main sketch, web_ui_handler, and alpaca.
 extern SkyConditions skyConditions;
+
+// Heatmap colour for a palette index under the current deviceConfig range
+// mode.  Shared by the JPEG snapshot and the browser lookup table so both
+// render identically.
+void heatmapColor(uint8_t idx, uint8_t &r, uint8_t &g, uint8_t &b);
 
 #endif // SKY_SENSOR_H

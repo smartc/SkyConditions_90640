@@ -147,34 +147,83 @@ static void cdsColormap(float t, uint8_t &r, uint8_t &g, uint8_t &b)
   b = (uint8_t)(stops[lo][2] + f * (stops[lo+1][2] - stops[lo][2]));
 }
 
-void SkyConditions::getDisplayRange(float &coldEnd, float &range) const
+// Fixed-mode warm tail: white → yellow → orange → red → dark red, positioned
+// as fractions of the span from HEATMAP_WARM_START_C to heatmapFixedMax.
+static const float   WARM_POS[5]      = {0.0f, 0.2f, 0.5f, 0.8f, 1.0f};
+static const uint8_t WARM_STOPS[5][3] = {
+  {250, 250, 250},  // matches the top of the ClearDarkSky palette
+  {255, 230,  90},  // yellow
+  {255, 150,  40},  // orange
+  {220,  40,  30},  // red
+  {150,   0,  40},  // dark red
+};
+
+void heatmapColor(uint8_t idx, uint8_t &r, uint8_t &g, uint8_t &b)
+{
+  if (idx == HEATMAP_HOT_INDEX) { r = 255; g = 0; b = 255; return; }  // magenta
+  float t = idx / (float)(HEATMAP_HOT_INDEX - 1);
+
+  if (deviceConfig.heatmapRangeMode != 1) { cdsColormap(t, r, g, b); return; }
+
+  float lo    = deviceConfig.heatmapFixedMin;
+  float hi    = deviceConfig.heatmapFixedMax;
+  float T     = lo + t * (hi - lo);
+  float split = constrain(HEATMAP_WARM_START_C, lo, hi);
+  if (T <= split) {
+    cdsColormap(split > lo ? (T - lo) / (split - lo) : 1.0f, r, g, b);
+    return;
+  }
+  float w = (T - split) / (hi - split);
+  int   k = 1;
+  while (k < 4 && w > WARM_POS[k]) k++;
+  float f = (w - WARM_POS[k - 1]) / (WARM_POS[k] - WARM_POS[k - 1]);
+  r = (uint8_t)(WARM_STOPS[k-1][0] + f * (WARM_STOPS[k][0] - WARM_STOPS[k-1][0]));
+  g = (uint8_t)(WARM_STOPS[k-1][1] + f * (WARM_STOPS[k][1] - WARM_STOPS[k-1][1]));
+  b = (uint8_t)(WARM_STOPS[k-1][2] + f * (WARM_STOPS[k][2] - WARM_STOPS[k-1][2]));
+}
+
+void SkyConditions::getDisplayRange(float &coldEnd, float &range, float &hotAbove) const
 {
   if (deviceConfig.heatmapRangeMode == 1) {
-    coldEnd = deviceConfig.heatmapFixedMin;
-    range   = deviceConfig.heatmapFixedMax - deviceConfig.heatmapFixedMin;
+    coldEnd  = deviceConfig.heatmapFixedMin;
+    range    = deviceConfig.heatmapFixedMax - deviceConfig.heatmapFixedMin;
+    if (range < 1.0f) range = 1.0f;
+    hotAbove = coldEnd + range;   // anything past the top of the scale
   } else {
     // Anchor the colormap to the cloud-cover calibration scale so that a clear
     // sky with a minor temperature gradient stays in the dark-blue region rather
     // than spanning the full range to white.
     //   coldEnd = temperature a "clearly clear" sky would have (ambient - clearDelta)
     //   warmEnd = temperature an "overcast" sky would have   (ambient - overcastDelta)
-    coldEnd = _ambientTemperature - deviceConfig.cloudClearDelta;
-    range   = deviceConfig.cloudClearDelta - deviceConfig.cloudOvercastDelta;
+    coldEnd  = _ambientTemperature - deviceConfig.cloudClearDelta;
+    range    = deviceConfig.cloudClearDelta - deviceConfig.cloudOvercastDelta;
+    if (range < 1.0f) range = 1.0f;
+    // The top of the floating scale sits below ambient, so flag only pixels
+    // well above ambient (e.g. the sun) rather than the warm frame edges.
+    hotAbove = _ambientTemperature + HEATMAP_HOT_MARGIN_C;
   }
-  if (range < 1.0f) range = 1.0f;
+}
+
+void SkyConditions::fillPaletteIndices(uint8_t *idx) const
+{
+  float coldEnd, range, hotAbove;
+  getDisplayRange(coldEnd, range, hotAbove);
+
+  for (int i = 0; i < SENSOR_PIXELS; i++) {
+    if (_frame[i] > hotAbove) { idx[i] = HEATMAP_HOT_INDEX; continue; }
+    float t = (_frame[i] - coldEnd) / range;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    idx[i] = (uint8_t)lroundf(t * (HEATMAP_HOT_INDEX - 1));
+  }
 }
 
 void SkyConditions::fillRGBBuffer(uint8_t *rgb) const
 {
-  float coldEnd, range;
-  getDisplayRange(coldEnd, range);
-
-  for (int i = 0; i < SENSOR_PIXELS; i++) {
-    float t = (_frame[i] - coldEnd) / range;
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
-    cdsColormap(t, rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
-  }
+  uint8_t idx[SENSOR_PIXELS];
+  fillPaletteIndices(idx);
+  for (int i = 0; i < SENSOR_PIXELS; i++)
+    heatmapColor(idx[i], rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
 }
 
 void SkyConditions::updateBrightness(float lux)
@@ -221,15 +270,7 @@ void SkyConditions::fillWebSocketBuffer(uint8_t *buf) const
   memcpy(buf +  8, &medT, 4);
   memcpy(buf + 12, &skyT, 4);
 
-  // Normalize pixels on the same display range used by fillRGBBuffer so the
-  // canvas and the JPEG snapshot share one colour scale.
-  float coldEnd, range;
-  getDisplayRange(coldEnd, range);
-
-  for (int i = 0; i < SENSOR_PIXELS; i++) {
-    float norm = (_frame[i] - coldEnd) / range;
-    if (norm < 0.0f) norm = 0.0f;
-    if (norm > 1.0f) norm = 1.0f;
-    buf[WS_HEADER_SIZE + i] = (uint8_t)(norm * 255.0f);
-  }
+  // Same palette indices as fillRGBBuffer, so the canvas and the JPEG snapshot
+  // share one colour scale.
+  fillPaletteIndices(buf + WS_HEADER_SIZE);
 }

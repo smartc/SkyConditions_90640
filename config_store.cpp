@@ -18,11 +18,11 @@ void configLoad(DeviceConfig &cfg)
   cfg.jpegQuality         = prefs.getUChar ("jpegQuality", 80);
   cfg.heatmapRangeMode    = prefs.getUChar ("heatMode",    0);
   cfg.heatmapFixedMin     = prefs.getFloat ("heatMin",   -45.0f);
-  cfg.heatmapFixedMax     = prefs.getFloat ("heatMax",    45.0f);
+  cfg.heatmapFixedMax     = prefs.getFloat ("heatMax",    60.0f);
   if (cfg.heatmapRangeMode > 1) cfg.heatmapRangeMode = 0;
   if (cfg.heatmapFixedMax - cfg.heatmapFixedMin < 1.0f) {
     cfg.heatmapFixedMin = -45.0f;
-    cfg.heatmapFixedMax =  45.0f;
+    cfg.heatmapFixedMax =  60.0f;
   }
 
   // Brightness sensor (2 = TSL2591_INTEGRATIONTIME_300MS)
