@@ -18,6 +18,9 @@ struct DeviceConfig {
   // Imaging
   uint16_t snapshotIntervalSec;  // thermal JPEG refresh interval (seconds)
   uint8_t  jpegQuality;          // JPEG quality 0–100
+  uint8_t  heatmapRangeMode;     // 0 = floating (anchored to cloud-cover deltas), 1 = fixed
+  float    heatmapFixedMin;      // °C at the cold end of the palette in fixed mode
+  float    heatmapFixedMax;      // °C at the warm end of the palette in fixed mode
 
   // Brightness sensor
   uint8_t  tsl2591Integration;   // TSL2591 integration time enum (0=100ms … 5=600ms)

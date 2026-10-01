@@ -71,6 +71,12 @@ public:
   void fillRGBBuffer(uint8_t *rgb888) const;
 
 private:
+  // Temperature mapped to palette position 0 (coldEnd) and the span to
+  // position 1.  Floating mode anchors to the cloud-cover deltas around
+  // ambient; fixed mode uses deviceConfig.heatmapFixedMin/Max.  Display only –
+  // cloud cover calculations are unaffected.
+  void getDisplayRange(float &coldEnd, float &range) const;
+
   // Raw frame – main-loop only.
   float _frame[SENSOR_PIXELS];
   float _sorted[SENSOR_PIXELS];  // scratch for median

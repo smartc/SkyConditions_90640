@@ -154,10 +154,15 @@ inline String getHomePage()
   html += "<h2>Live Thermal View</h2>\n";
   html += "<div class='thermal-wrap'>\n";
   html += "<canvas id='thermal-canvas' width='640' height='480'></canvas>\n";
-  // Vertical colour scale.  The palette spans ambient − Clear Δ (navy) to
-  // ambient − Overcast Δ (white); tick labels are filled in by the script.
-  html += "<div class='cbar' title='Colour scale: navy = ambient − Clear Δ (clear sky), "
-          "white = ambient − Overcast Δ (overcast). Values beyond either end are clamped.'>"
+  // Vertical colour scale.  Floating mode spans ambient − Clear Δ (navy) to
+  // ambient − Overcast Δ (white); fixed mode spans heatmapFixedMin..Max.
+  // Tick labels are filled in by the script.
+  html += String("<div class='cbar' title='") +
+          (deviceConfig.heatmapRangeMode == 1
+             ? "Fixed colour scale (set in Setup → Imaging)."
+             : "Floating colour scale: navy = ambient − Clear Δ (clear sky), "
+               "white = ambient − Overcast Δ (overcast).") +
+          " Values beyond either end are clamped.'>"
           "<div class='cbar-grad' id='cbar-grad'></div>"
           "<div class='cbar-ticks' id='cbar-ticks'></div></div>\n";
   html += "</div>\n";
@@ -324,9 +329,13 @@ function cds(t) {
 const skyLT = new Array(256);
 for (let i = 0; i < 256; i++) { skyLT[i] = cds(i/255); }
 
-// Vertical colour scale beside the thermal view.  Mirrors the normalisation in
-// SkyConditions::fillWebSocketBuffer(): t=0 at ambient − Clear Δ, t=1 at
-// ambient − Overcast Δ (span clamped to ≥ 1 °C), so labels track ambient.
+// Vertical colour scale beside the thermal view.  Mirrors
+// SkyConditions::getDisplayRange(): fixed mode uses HEAT_MIN..HEAT_MAX;
+// floating mode puts t=0 at ambient − Clear Δ and t=1 at ambient − Overcast Δ
+// (span clamped to ≥ 1 °C), so its labels track ambient.
+const HEAT_FIXED     = )rawjs" + String(deviceConfig.heatmapRangeMode == 1 ? "true" : "false") + R"rawjs(;
+const HEAT_MIN       = )rawjs" + String(deviceConfig.heatmapFixedMin, 2) + R"rawjs(;
+const HEAT_MAX       = )rawjs" + String(deviceConfig.heatmapFixedMax, 2) + R"rawjs(;
 const CLEAR_DELTA    = )rawjs" + String(deviceConfig.cloudClearDelta, 2) + R"rawjs(;
 const OVERCAST_DELTA = )rawjs" + String(deviceConfig.cloudOvercastDelta, 2) + R"rawjs(;
 const CBAR_TICKS = 5;
@@ -341,8 +350,8 @@ for (let i = 0; i < CBAR_TICKS; i++) {
   cbarTicks.appendChild(s);
 }
 function updateColorBar(amb) {
-  const cold = amb - CLEAR_DELTA;
-  const span = Math.max(1, CLEAR_DELTA - OVERCAST_DELTA);
+  const cold = HEAT_FIXED ? HEAT_MIN : amb - CLEAR_DELTA;
+  const span = Math.max(1, HEAT_FIXED ? HEAT_MAX - HEAT_MIN : CLEAR_DELTA - OVERCAST_DELTA);
   const spans = cbarTicks.children;
   for (let i = 0; i < CBAR_TICKS; i++) {
     const t = 1 - i / (CBAR_TICKS - 1);          // top = warm end
@@ -351,7 +360,9 @@ function updateColorBar(amb) {
   }
 }
 )rawjs";
-  if (skyConditions.hasData())
+  if (deviceConfig.heatmapRangeMode == 1)
+    html += "updateColorBar(0);\n";
+  else if (skyConditions.hasData())
     html += "updateColorBar(" + String(skyConditions.getAmbientTemperature(), 2) + ");\n";
   html += R"rawjs(
 
@@ -642,6 +653,36 @@ inline String getSetupPage()
           "<td><input type='number' name='jpegQuality' min='1' max='100' step='1' value='" +
           String(deviceConfig.jpegQuality) + "' style='" + inpStyle + "'></td>"
           "<td>Higher = better image, larger file</td></tr>\n";
+
+  html += "<tr><td>Heatmap Range</td><td>";
+  html += "<select name='heatMode' id='heatMode' style='" + inpStyle + "width:130px;'"
+          " onchange='updateHeat()'>";
+  html += "<option value='0'" + String(deviceConfig.heatmapRangeMode == 0 ? " selected" : "") +
+          ">Floating</option>";
+  html += "<option value='1'" + String(deviceConfig.heatmapRangeMode == 1 ? " selected" : "") +
+          ">Fixed</option>";
+  html += "</select></td>"
+          "<td>Colour scale for the live view and /thermal.jpg. Floating spans ambient \u2212 "
+          "Clear\u202F\u0394 to ambient \u2212 Overcast\u202F\u0394 (tracks cloud cover); "
+          "Fixed uses the range below. Display only \u2013 cloud cover is unaffected.</td></tr>\n";
+
+  String heatDis = deviceConfig.heatmapRangeMode == 0 ? " disabled" : "";
+  html += "<tr><td>Fixed Range Min / Max (\u00B0C)</td>"
+          "<td style='white-space:nowrap'>"
+          "<input type='number' name='heatMin' id='heatMin' step='0.5' value='" +
+          String(deviceConfig.heatmapFixedMin, 1) + "' style='" + inpStyle + "width:60px;'" + heatDis + ">"
+          " / <input type='number' name='heatMax' id='heatMax' step='0.5' value='" +
+          String(deviceConfig.heatmapFixedMax, 1) + "' style='" + inpStyle + "width:60px;'" + heatDis + ">"
+          "</td><td>Palette end points in Fixed mode (default \u221245 / +45). Max must exceed Min by \u2265\u202F1\u00B0C.</td></tr>\n";
+  html += R"rawsetup(
+<script>
+function updateHeat() {
+  var fixed = document.getElementById('heatMode').value === '1';
+  document.getElementById('heatMin').disabled = !fixed;
+  document.getElementById('heatMax').disabled = !fixed;
+}
+</script>
+)rawsetup";
 
   // ── Brightness sensor ─────────────────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>Brightness Sensor (TSL2591)</th></tr>\n";

@@ -147,17 +147,27 @@ static void cdsColormap(float t, uint8_t &r, uint8_t &g, uint8_t &b)
   b = (uint8_t)(stops[lo][2] + f * (stops[lo+1][2] - stops[lo][2]));
 }
 
+void SkyConditions::getDisplayRange(float &coldEnd, float &range) const
+{
+  if (deviceConfig.heatmapRangeMode == 1) {
+    coldEnd = deviceConfig.heatmapFixedMin;
+    range   = deviceConfig.heatmapFixedMax - deviceConfig.heatmapFixedMin;
+  } else {
+    // Anchor the colormap to the cloud-cover calibration scale so that a clear
+    // sky with a minor temperature gradient stays in the dark-blue region rather
+    // than spanning the full range to white.
+    //   coldEnd = temperature a "clearly clear" sky would have (ambient - clearDelta)
+    //   warmEnd = temperature an "overcast" sky would have   (ambient - overcastDelta)
+    coldEnd = _ambientTemperature - deviceConfig.cloudClearDelta;
+    range   = deviceConfig.cloudClearDelta - deviceConfig.cloudOvercastDelta;
+  }
+  if (range < 1.0f) range = 1.0f;
+}
+
 void SkyConditions::fillRGBBuffer(uint8_t *rgb) const
 {
-  // Anchor the colormap to the cloud-cover calibration scale so that a clear
-  // sky with a minor temperature gradient stays in the dark-blue region rather
-  // than spanning the full range to white.
-  //   coldEnd = temperature a "clearly clear" sky would have (ambient - clearDelta)
-  //   warmEnd = temperature an "overcast" sky would have   (ambient - overcastDelta)
-  float coldEnd = _ambientTemperature - deviceConfig.cloudClearDelta;
-  float warmEnd = _ambientTemperature - deviceConfig.cloudOvercastDelta;
-  float range   = warmEnd - coldEnd;  // == cloudClearDelta - cloudOvercastDelta
-  if (range < 1.0f) range = 1.0f;
+  float coldEnd, range;
+  getDisplayRange(coldEnd, range);
 
   for (int i = 0; i < SENSOR_PIXELS; i++) {
     float t = (_frame[i] - coldEnd) / range;
@@ -211,12 +221,10 @@ void SkyConditions::fillWebSocketBuffer(uint8_t *buf) const
   memcpy(buf +  8, &medT, 4);
   memcpy(buf + 12, &skyT, 4);
 
-  // Normalize pixels on the same cloud-cover scale used by fillRGBBuffer so
-  // that the canvas colormap stays anchored to calibration thresholds.
-  float coldEnd = _ambientTemperature - deviceConfig.cloudClearDelta;
-  float warmEnd = _ambientTemperature - deviceConfig.cloudOvercastDelta;
-  float range   = warmEnd - coldEnd;
-  if (range < 1.0f) range = 1.0f;
+  // Normalize pixels on the same display range used by fillRGBBuffer so the
+  // canvas and the JPEG snapshot share one colour scale.
+  float coldEnd, range;
+  getDisplayRange(coldEnd, range);
 
   for (int i = 0; i < SENSOR_PIXELS; i++) {
     float norm = (_frame[i] - coldEnd) / range;

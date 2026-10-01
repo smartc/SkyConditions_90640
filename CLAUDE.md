@@ -112,7 +112,9 @@ The `_frame[768]` array in `SkyConditions` is only written from `readSensor()` a
 | 4–7 | float32 – frame maximum temperature |
 | 8–11 | float32 – frame median temperature |
 | 12–15 | float32 – sky temperature (center 50% FOV average) |
-| 16–783 | uint8 × 768 – pixels normalized 0–255 to frame min/max range |
+| 16–783 | uint8 × 768 – pixels normalized 0–255 over the heatmap display range (see below) |
+
+**Heatmap display range** (`SkyConditions::getDisplayRange()`, shared by the WebSocket frame and `/thermal.jpg`): in floating mode (default) palette 0 = ambient − `cloudClearDelta` and 1 = ambient − `cloudOvercastDelta`; in fixed mode it spans `heatmapFixedMin`..`heatmapFixedMax`. Display only — cloud-cover calculations never use it. The home page draws a matching vertical colour bar beside the live view.
 
 ### Center FOV Definition
 
@@ -159,6 +161,9 @@ All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (
 | `cloudOvercastDelta` | `cldOvercast` | 5.0 °C |
 | `snapshotIntervalSec` | `snapSec` | 30 s |
 | `jpegQuality` | `jpegQuality` | 80 |
+| `heatmapRangeMode` | `heatMode` | 0 (floating: ambient − cloud deltas); 1 = fixed |
+| `heatmapFixedMin` | `heatMin` | −45.0 °C |
+| `heatmapFixedMax` | `heatMax` | +45.0 °C |
 | `tsl2591Integration` | `tslInteg` | 2 (300 ms) |
 | `averagePeriod` | `avgPeriod` | 0.5 s |
 | `location` | `location` | "Observatory" |
