@@ -16,6 +16,15 @@ void configLoad(DeviceConfig &cfg)
   // Imaging
   cfg.snapshotIntervalSec = prefs.getUShort("snapSec",     JPEG_INTERVAL_MS / 1000);
   cfg.jpegQuality         = prefs.getUChar ("jpegQuality", 80);
+  cfg.heatmapRangeMode    = prefs.getUChar ("heatMode",    0);
+  cfg.heatmapFixedMin     = prefs.getFloat ("heatMin",   -45.0f);
+  cfg.heatmapFixedMax     = prefs.getFloat ("heatMax",    60.0f);
+  cfg.heatmapHotMarker    = prefs.getBool  ("heatHot",    false);
+  if (cfg.heatmapRangeMode > 1) cfg.heatmapRangeMode = 0;
+  if (cfg.heatmapFixedMax - cfg.heatmapFixedMin < 1.0f) {
+    cfg.heatmapFixedMin = -45.0f;
+    cfg.heatmapFixedMax =  60.0f;
+  }
 
   // Brightness sensor (2 = TSL2591_INTEGRATIONTIME_300MS)
   cfg.tsl2591Integration  = prefs.getUChar ("tslInteg",    2);
@@ -91,6 +100,10 @@ void configSave(const DeviceConfig &cfg)
   prefs.putFloat ("cldOvercast", cfg.cloudOvercastDelta);
   prefs.putUShort("snapSec",     cfg.snapshotIntervalSec);
   prefs.putUChar ("jpegQuality", cfg.jpegQuality);
+  prefs.putUChar ("heatMode",    cfg.heatmapRangeMode);
+  prefs.putFloat ("heatMin",     cfg.heatmapFixedMin);
+  prefs.putFloat ("heatMax",     cfg.heatmapFixedMax);
+  prefs.putBool  ("heatHot",     cfg.heatmapHotMarker);
   prefs.putUChar ("tslInteg",    cfg.tsl2591Integration);
   prefs.putDouble("avgPeriod",   cfg.averagePeriod);
   prefs.putString("location",    cfg.location);

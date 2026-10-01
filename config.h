@@ -93,7 +93,7 @@
 // Device Information
 #define SERVER_NAME       "SkyConditions_90640"
 #define MANUFACTURER      "Corey Smart"
-#define MANUFACTURER_V    "0.6.2"
+#define MANUFACTURER_V    "0.6.3"
 #define LOCATION          "Observatory"
 #define DEVICE_NAME       "MLX90640 Sky Conditions Sensor"
 #define DESCRIPTION       "ESP32-S3 ASCOM Alpaca ObservingConditions device using MLX90640 thermal camera"
@@ -156,12 +156,27 @@
 // 10 → 320×240 px (~230 KB staging in PSRAM).  Requires PSRAM enabled in board settings.
 #define THERMAL_JPEG_SCALE  10
 
+// Heatmap palette (display only – cloud cover never uses these).
+// In fixed mode the blue→white sky palette runs from heatmapFixedMin up to
+// HEATMAP_WARM_START_C, then a white→yellow→orange→red warm tail runs up to
+// heatmapFixedMax; values beyond either end are clamped to the end colour.
+// Optional hot-pixel marker (deviceConfig.heatmapHotMarker, runtime-toggled
+// in Setup): when enabled, palette index HEATMAP_HOT_INDEX (magenta) marks
+// pixels above the hot threshold – heatmapFixedMax in fixed mode, ambient +
+// HEATMAP_HOT_MARGIN_C in floating mode – so a sub-pixel sun stands out
+// instead of clamping.
+#define HEATMAP_HOT_INDEX     255
+#define HEATMAP_HOT_MARGIN_C  20.0f
+#define HEATMAP_WARM_START_C   0.0f
+
 // WebSocket binary frame layout (sent to browser)
 // Bytes  0-3:  float32 min temperature (full frame)
 // Bytes  4-7:  float32 max temperature (full frame)
 // Bytes  8-11: float32 median temperature (full frame)
 // Bytes 12-15: float32 sky temperature (center 50% FOV average)
-// Bytes 16-783: uint8  normalized pixel values [0..255]
+// Bytes 16-783: uint8  palette index per pixel: 0..254 = position on the
+//               heatmap display range, 255 = above the "hot" threshold
+//               (only when deviceConfig.heatmapHotMarker is enabled)
 #define WS_HEADER_SIZE      16
 #define WS_FRAME_SIZE       (WS_HEADER_SIZE + SENSOR_PIXELS)  // 784 bytes
 

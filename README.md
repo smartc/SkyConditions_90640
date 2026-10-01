@@ -2,7 +2,7 @@
 
 ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 infrared thermal camera and TSL2591 sky brightness sensor.  Provides a fully standards-compliant Alpaca API for sky temperature, cloud cover, sky brightness, and sky quality monitoring — plus a live thermal viewer and trend charts in the browser.
 
-**Current version: 0.6.2**
+**Current version: 0.6.3**
 
 ---
 
@@ -26,7 +26,7 @@ ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 in
 - **DDA-compatible Safety Sensor UDP broadcast** — periodically broadcasts rain safety status on the local subnet in the Dark Dragon Astronomy park-sensor JSON format, allowing devices such as a Roll-Off Roof controller to discover the sensor and react to weather conditions automatically; port, interval, and enable state are runtime-configurable
 - **Optional ambient sensor** — runtime-selectable: DHT11, DHT22, BMP180, BMP280, or BME280; replaces MLX90640 die temp as ambient reference for cloud cover calculations
 - **MQTT / Home Assistant autodiscovery** — publishes all sensor values + thermal thumbnail; HA entities created automatically on connect
-- **ClearDarkSky colormap** for the thermal heatmap — dark navy (clear/cold) through white (overcast/warm), anchored to calibration thresholds
+- **ClearDarkSky colormap** for the thermal heatmap — dark navy (clear/cold) through white (overcast/warm), anchored to calibration thresholds (floating) or a fixed °C range with a warm tail (default −45 … +60 °C, ending in red); a colour bar beside the live view shows the scale
 - **Live thermal WebSocket stream** on port 81 — 784-byte binary frames at 2 Hz, bicubic-smoothed in the browser
 - **Browser UI** on port 80
   - Home page: current readings, live thermal image, dual cloud cover values, brightness, rain status, humidity
@@ -250,7 +250,7 @@ WebSocket live stream: `ws://<ip>:81` — 784-byte binary frames (see below).
 | 4–7 | float32 | Frame maximum temperature (°C) |
 | 8–11 | float32 | Frame median temperature (°C) |
 | 12–15 | float32 | Sky temperature — center 50% FOV average (°C) |
-| 16–783 | uint8 × 768 | Pixels normalized 0–255 on the cloud-cover calibration scale |
+| 16–783 | uint8 × 768 | Palette index per pixel: 0–254 across the heatmap display range, 255 = above the "hot" threshold (optional, off by default) |
 
 ---
 
@@ -266,7 +266,7 @@ Enable in Setup → MQTT.  The device publishes to `<prefix>/state` every 30 sec
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.6.2"
+  "ip": "192.168.x.x",  "version": "0.6.3"
 }
 ```
 

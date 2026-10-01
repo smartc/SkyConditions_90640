@@ -254,6 +254,17 @@ static void handleSaveConfig()
     deviceConfig.snapshotIntervalSec = (uint16_t)webUiServer.arg("snapSec").toInt();
   if (webUiServer.hasArg("jpegQuality"))
     deviceConfig.jpegQuality = (uint8_t)constrain(webUiServer.arg("jpegQuality").toInt(), 1, 100);
+  if (webUiServer.hasArg("heatMode"))
+    deviceConfig.heatmapRangeMode = (uint8_t)(webUiServer.arg("heatMode").toInt() != 0 ? 1 : 0);
+  if (webUiServer.hasArg("heatMin") && webUiServer.hasArg("heatMax")) {
+    float lo = constrain(webUiServer.arg("heatMin").toFloat(), -100.0f, 200.0f);
+    float hi = constrain(webUiServer.arg("heatMax").toFloat(), -100.0f, 200.0f);
+    if (hi - lo >= 1.0f) {
+      deviceConfig.heatmapFixedMin = lo;
+      deviceConfig.heatmapFixedMax = hi;
+    }
+  }
+  deviceConfig.heatmapHotMarker = webUiServer.hasArg("heatHot");
   if (webUiServer.hasArg("tslInteg"))
     deviceConfig.tsl2591Integration = (uint8_t)constrain(webUiServer.arg("tslInteg").toInt(), 0, 5);
   if (webUiServer.hasArg("avgPeriod"))
