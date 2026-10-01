@@ -50,7 +50,15 @@ inline String getCommonStyles()
     ".max-temp  { color: #fd79a8; }\n"
     ".med-temp  { color: #55efc4; }\n"
     ".amb-temp  { color: #ffeaa7; }\n"
-    "#thermal-canvas { display: block; margin: 0 auto; image-rendering: pixelated; border-radius: 4px; }\n"
+    ".thermal-wrap { display: flex; justify-content: center; align-items: stretch; gap: 8px; }\n"
+    "#thermal-canvas { display: block; min-width: 0; max-width: calc(100% - 76px); height: auto;"
+                     " image-rendering: pixelated; border-radius: 4px; }\n"
+    ".cbar { display: flex; gap: 6px; flex: 0 0 auto; }\n"
+    ".cbar-grad { width: 14px; border-radius: 3px; border: 1px solid #0f3460; }\n"
+    ".cbar-ticks { position: relative; width: 56px; font-size: 0.72em; color: #b2bec3; }\n"
+    ".cbar-ticks span { position: absolute; left: 0; white-space: nowrap; transform: translateY(-50%); }\n"
+    ".cbar-ticks span:first-child { transform: none; }\n"
+    ".cbar-ticks span:last-child  { transform: translateY(-100%); }\n"
     "#ws-status { font-size: 0.8em; color: #636e72; margin-top: 6px; text-align: center; }\n"
     ".cal-nav { display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:14px; }\n"
     ".cal-nav button { background:#0f3460; color:#e0e0e0; border:none; border-radius:4px;"
@@ -144,7 +152,15 @@ inline String getHomePage()
   // Live thermal canvas
   html += "<div class='card'>\n";
   html += "<h2>Live Thermal View</h2>\n";
+  html += "<div class='thermal-wrap'>\n";
   html += "<canvas id='thermal-canvas' width='640' height='480'></canvas>\n";
+  // Vertical colour scale.  The palette spans ambient − Clear Δ (navy) to
+  // ambient − Overcast Δ (white); tick labels are filled in by the script.
+  html += "<div class='cbar' title='Colour scale: navy = ambient − Clear Δ (clear sky), "
+          "white = ambient − Overcast Δ (overcast). Values beyond either end are clamped.'>"
+          "<div class='cbar-grad' id='cbar-grad'></div>"
+          "<div class='cbar-ticks' id='cbar-ticks'></div></div>\n";
+  html += "</div>\n";
   html += "<div id='ws-status'>Connecting...</div>\n";
   html += "</div>\n";
 
@@ -308,6 +324,37 @@ function cds(t) {
 const skyLT = new Array(256);
 for (let i = 0; i < 256; i++) { skyLT[i] = cds(i/255); }
 
+// Vertical colour scale beside the thermal view.  Mirrors the normalisation in
+// SkyConditions::fillWebSocketBuffer(): t=0 at ambient − Clear Δ, t=1 at
+// ambient − Overcast Δ (span clamped to ≥ 1 °C), so labels track ambient.
+const CLEAR_DELTA    = )rawjs" + String(deviceConfig.cloudClearDelta, 2) + R"rawjs(;
+const OVERCAST_DELTA = )rawjs" + String(deviceConfig.cloudOvercastDelta, 2) + R"rawjs(;
+const CBAR_TICKS = 5;
+document.getElementById('cbar-grad').style.background =
+  'linear-gradient(to top,' + CDS_STOPS.map((c, i) =>
+    'rgb(' + c.join(',') + ') ' + (i * 10) + '%').join(',') + ')';
+const cbarTicks = document.getElementById('cbar-ticks');
+for (let i = 0; i < CBAR_TICKS; i++) {
+  const s = document.createElement('span');
+  s.style.top = (i * 100 / (CBAR_TICKS - 1)) + '%';
+  s.textContent = '--';
+  cbarTicks.appendChild(s);
+}
+function updateColorBar(amb) {
+  const cold = amb - CLEAR_DELTA;
+  const span = Math.max(1, CLEAR_DELTA - OVERCAST_DELTA);
+  const spans = cbarTicks.children;
+  for (let i = 0; i < CBAR_TICKS; i++) {
+    const t = 1 - i / (CBAR_TICKS - 1);          // top = warm end
+    const pre = (i === 0) ? '≥' : (i === CBAR_TICKS - 1) ? '≤' : '';
+    spans[i].textContent = pre + (cold + t * span).toFixed(1) + '°C';
+  }
+}
+)rawjs";
+  if (skyConditions.hasData())
+    html += "updateColorBar(" + String(skyConditions.getAmbientTemperature(), 2) + ");\n";
+  html += R"rawjs(
+
 function fmtLux(lux) {
   if (lux >= 1)     return lux.toFixed(1)       + ' lux';
   if (lux >= 0.1)   return lux.toFixed(3)       + ' lux';
@@ -347,6 +394,7 @@ function connect() {
         if (d.amb !== undefined) {
           const nd = d.has_data, nb = d.has_brightness;
           document.getElementById('amb-temp').textContent   = nd ? d.amb.toFixed(1)        + '°C'        : '--';
+          if (nd) updateColorBar(d.amb);
           document.getElementById('cloud-mean').textContent = nd ? d.cloud_mean.toFixed(0) + '%'         : '--';
           document.getElementById('cloud-px').textContent   = nd ? d.cloud_px.toFixed(0)   + '%'         : '--';
           document.getElementById('lux-val').textContent    = nb ? fmtLux(d.lux)                         : '--';
