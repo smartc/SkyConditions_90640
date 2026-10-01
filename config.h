@@ -157,11 +157,14 @@
 #define THERMAL_JPEG_SCALE  10
 
 // Heatmap palette (display only – cloud cover never uses these).
-// Palette index HEATMAP_HOT_INDEX (magenta) marks pixels above the hot
-// threshold: heatmapFixedMax in fixed mode, ambient + HEATMAP_HOT_MARGIN_C in
-// floating mode.  In fixed mode the blue→white sky palette runs from
-// heatmapFixedMin up to HEATMAP_WARM_START_C, then a white→yellow→orange→red
-// warm tail runs up to heatmapFixedMax.
+// In fixed mode the blue→white sky palette runs from heatmapFixedMin up to
+// HEATMAP_WARM_START_C, then a white→yellow→orange→red warm tail runs up to
+// heatmapFixedMax; values beyond either end are clamped to the end colour.
+// Optional hot-pixel marker: when HEATMAP_HOT_MARKER is 1, palette index
+// HEATMAP_HOT_INDEX (magenta) marks pixels above the hot threshold –
+// heatmapFixedMax in fixed mode, ambient + HEATMAP_HOT_MARGIN_C in floating
+// mode – so a sub-pixel sun stands out instead of clamping.
+#define HEATMAP_HOT_MARKER    0
 #define HEATMAP_HOT_INDEX     255
 #define HEATMAP_HOT_MARGIN_C  20.0f
 #define HEATMAP_WARM_START_C   0.0f
@@ -173,6 +176,7 @@
 // Bytes 12-15: float32 sky temperature (center 50% FOV average)
 // Bytes 16-783: uint8  palette index per pixel: 0..254 = position on the
 //               heatmap display range, 255 = above the "hot" threshold
+//               (only when HEATMAP_HOT_MARKER is enabled)
 #define WS_HEADER_SIZE      16
 #define WS_FRAME_SIZE       (WS_HEADER_SIZE + SENSOR_PIXELS)  // 784 bytes
 

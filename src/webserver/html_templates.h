@@ -159,19 +159,25 @@ inline String getHomePage()
   html += "<canvas id='thermal-canvas' width='640' height='480'></canvas>\n";
   // Vertical colour scale.  Floating mode spans ambient − Clear Δ (navy) to
   // ambient − Overcast Δ (white); fixed mode spans heatmapFixedMin..Max with a
-  // warm tail.  The magenta cap marks the "hot" threshold (e.g. the sun).
-  // Labels are filled in by the script.
+  // warm tail.  With HEATMAP_HOT_MARKER a magenta cap marks the "hot"
+  // threshold (e.g. the sun).  Labels are filled in by the script.
   String cbarTip;
   if (deviceConfig.heatmapRangeMode == 1)
-    cbarTip = "Fixed colour scale (set in Setup → Imaging). Magenta = above the top of the scale.";
+    cbarTip = "Fixed colour scale (set in Setup → Imaging).";
   else
     cbarTip = "Floating colour scale: navy = ambient − Clear Δ (clear sky), "
-              "white = ambient − Overcast Δ (overcast). Magenta = more than " +
-              String(HEATMAP_HOT_MARGIN_C, 0) + " °C above ambient.";
+              "white = ambient − Overcast Δ (overcast).";
+  if (HEATMAP_HOT_MARKER && deviceConfig.heatmapRangeMode == 1)
+    cbarTip += " Magenta = above the top of the scale.";
+  else if (HEATMAP_HOT_MARKER)
+    cbarTip += " Magenta = more than " + String(HEATMAP_HOT_MARGIN_C, 0) + " °C above ambient.";
+  else
+    cbarTip += " Values beyond either end are clamped.";
   html += "<div class='cbar' title='" + cbarTip + "'>"
-          "<div class='cbar-col'><div class='cbar-hot'></div>"
+          "<div class='cbar-col'>" + String(HEATMAP_HOT_MARKER ? "<div class='cbar-hot'></div>" : "") +
           "<div class='cbar-grad' id='cbar-grad'></div></div>"
-          "<div class='cbar-col'><div class='cbar-hotlbl' id='cbar-hot'>--</div>"
+          "<div class='cbar-col'>" +
+          String(HEATMAP_HOT_MARKER ? "<div class='cbar-hotlbl' id='cbar-hot'>--</div>" : "") +
           "<div class='cbar-ticks' id='cbar-ticks'></div></div></div>\n";
   html += "</div>\n";
   html += "<div id='ws-status'>Connecting...</div>\n";
@@ -338,13 +344,14 @@ const status  = document.getElementById('ws-status');
 // Vertical colour scale beside the thermal view.  Mirrors
 // SkyConditions::getDisplayRange(): fixed mode uses HEAT_MIN..HEAT_MAX;
 // floating mode puts t=0 at ambient − Clear Δ and t=1 at ambient − Overcast Δ
-// (span clamped to ≥ 1 °C), so its labels track ambient.  The magenta cap is
-// HEAT_MAX in fixed mode and ambient + HOT_MARGIN in floating mode.
+// (span clamped to ≥ 1 °C), so its labels track ambient.  The magenta cap
+// (HOT_MARKER only) is HEAT_MAX in fixed mode, ambient + HOT_MARGIN floating.
 const HEAT_FIXED     = )rawjs" + String(deviceConfig.heatmapRangeMode == 1 ? "true" : "false") + R"rawjs(;
 const HEAT_MIN       = )rawjs" + String(deviceConfig.heatmapFixedMin, 2) + R"rawjs(;
 const HEAT_MAX       = )rawjs" + String(deviceConfig.heatmapFixedMax, 2) + R"rawjs(;
 const CLEAR_DELTA    = )rawjs" + String(deviceConfig.cloudClearDelta, 2) + R"rawjs(;
 const OVERCAST_DELTA = )rawjs" + String(deviceConfig.cloudOvercastDelta, 2) + R"rawjs(;
+const HOT_MARKER     = )rawjs" + String(HEATMAP_HOT_MARKER ? "true" : "false") + R"rawjs(;
 const HOT_MARGIN     = )rawjs" + String(HEATMAP_HOT_MARGIN_C, 1) + R"rawjs(;
 const CBAR_TICKS = 5;
 {
@@ -370,11 +377,13 @@ function updateColorBar(amb) {
   const spans = cbarTicks.children;
   for (let i = 0; i < CBAR_TICKS; i++) {
     const t = 1 - i / (CBAR_TICKS - 1);          // top = warm end
-    // Fixed mode: values above the top are magenta, not clamped, so no '≥'.
-    const pre = (i === 0 && !HEAT_FIXED) ? '≥' : (i === CBAR_TICKS - 1) ? '≤' : '';
+    // With the hot marker, fixed-mode values above the top are magenta rather
+    // than clamped, so the top label drops its '≥'.
+    const pre = (i === 0 && !(HOT_MARKER && HEAT_FIXED)) ? '≥' : (i === CBAR_TICKS - 1) ? '≤' : '';
     spans[i].textContent = pre + (cold + t * span).toFixed(1) + '°C';
   }
-  cbarHot.textContent = '>' + (HEAT_FIXED ? cold + span : amb + HOT_MARGIN).toFixed(1) + '°C';
+  if (cbarHot)
+    cbarHot.textContent = '>' + (HEAT_FIXED ? cold + span : amb + HOT_MARGIN).toFixed(1) + '°C';
 }
 )rawjs";
   if (deviceConfig.heatmapRangeMode == 1)
@@ -681,10 +690,13 @@ inline String getSetupPage()
   html += "</select></td>"
           "<td>Colour scale for the live view and /thermal.jpg. Floating spans ambient \u2212 "
           "Clear\u202F\u0394 to ambient \u2212 Overcast\u202F\u0394 (tracks cloud cover); "
-          "Fixed uses the range below, blue\u2192white up to 0\u202F\u00B0C then a warm tail. "
-          "Magenta marks pixels above the top of the fixed range, or more than " +
-          String(HEATMAP_HOT_MARGIN_C, 0) + "\u202F\u00B0C above ambient when floating. "
-          "Display only \u2013 cloud cover is unaffected.</td></tr>\n";
+          "Fixed uses the range below, blue\u2192white up to 0\u202F\u00B0C then a warm tail to red. ";
+  if (HEATMAP_HOT_MARKER)
+    html += "Magenta marks pixels above the top of the fixed range, or more than " +
+            String(HEATMAP_HOT_MARGIN_C, 0) + "\u202F\u00B0C above ambient when floating. ";
+  else
+    html += "Values beyond either end are clamped. ";
+  html += "Display only \u2013 cloud cover is unaffected.</td></tr>\n";
 
   String heatDis = deviceConfig.heatmapRangeMode == 0 ? " disabled" : "";
   html += "<tr><td>Fixed Range Min / Max (\u00B0C)</td>"

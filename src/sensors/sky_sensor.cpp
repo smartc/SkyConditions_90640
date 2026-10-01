@@ -210,7 +210,7 @@ void SkyConditions::fillPaletteIndices(uint8_t *idx) const
   getDisplayRange(coldEnd, range, hotAbove);
 
   for (int i = 0; i < SENSOR_PIXELS; i++) {
-    if (_frame[i] > hotAbove) { idx[i] = HEATMAP_HOT_INDEX; continue; }
+    if (HEATMAP_HOT_MARKER && _frame[i] > hotAbove) { idx[i] = HEATMAP_HOT_INDEX; continue; }
     float t = (_frame[i] - coldEnd) / range;
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
