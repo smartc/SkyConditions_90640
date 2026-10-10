@@ -364,3 +364,11 @@ SkyConditions_90640/
     │   └── rain_safety_broadcast DDA-compatible safety sensor UDP broadcast
     └── watchdog/                 Heap monitor / periodic health log
 ```
+
+---
+
+## License
+
+MIT – see [LICENSE](LICENSE).
+
+The bundled [PubSubClient](https://github.com/knolleary/pubsubclient) library in `src/mqtt/PubSubClient.*` is © Nick O'Leary and distributed under its own MIT license.
