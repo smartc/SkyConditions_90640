@@ -117,6 +117,7 @@ void dhtLoop()
       dhtData.pressure    = p;
       dhtData.humidity    = 0.0f;
       dhtData.valid       = true;
+      dhtData.lastUpdateMs = millis();
       if (changed)
         Debug.printf("[BMP180] T=%.1f°C  P=%.1f hPa\n", t, p);
     } else {
@@ -140,6 +141,7 @@ void dhtLoop()
       dhtData.pressure    = p;
       dhtData.humidity    = 0.0f;
       dhtData.valid       = true;
+      dhtData.lastUpdateMs = millis();
       if (changed)
         Debug.printf("[BMP280] T=%.1f°C  P=%.1f hPa\n", t, p);
     } else {
@@ -165,6 +167,7 @@ void dhtLoop()
       dhtData.pressure    = p;
       dhtData.humidity    = h;
       dhtData.valid       = true;
+      dhtData.lastUpdateMs = millis();
       if (changed)
         Debug.printf("[BME280] T=%.1f°C  P=%.1f hPa  RH=%.0f%%\n", t, p, h);
     } else {
@@ -189,6 +192,7 @@ void dhtLoop()
     dhtData.humidity    = h;
     dhtData.pressure    = 0.0f;
     dhtData.valid       = true;
+    dhtData.lastUpdateMs = millis();
     if (changed)
       Debug.printf("[DHT] T=%.1f°C  RH=%.0f%%\n", t, h);
   } else {

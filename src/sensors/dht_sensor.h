@@ -21,9 +21,10 @@
 
 struct DhtData {
   float temperature;  // °C – last valid reading
-  float humidity;     // %RH – last valid reading (DHT only; 0 for BMP180)
-  float pressure;     // hPa – last valid reading (BMP180 only; 0 for DHT)
+  float humidity;     // %RH – last valid reading (DHT/BME280; 0 for BMP180/BMP280)
+  float pressure;     // hPa – last valid reading (BMP180/BMP280/BME280; 0 for DHT)
   bool  valid;        // true = last read succeeded
+  unsigned long lastUpdateMs;  // millis() of last successful read (0 = never)
 };
 
 extern DhtData dhtData;

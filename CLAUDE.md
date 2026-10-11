@@ -76,11 +76,14 @@ The Alpaca protocol is implemented from scratch in `alpaca.cpp` using the Arduin
 | Property / Method | Source | Notes |
 |-------------------|--------|-------|
 | `SkyTemperature` | MLX90640 | Average of center 16×12 = 192 pixels |
-| `Temperature` | MLX90640 | Sensor die temperature |
+| `Temperature` | Ambient sensor / MLX90640 | `dhtData` when `dhtType != 0` (1026 until a valid read); MLX90640 die temp otherwise |
 | `CloudCover` | MLX90640 | Linear interp on ambient−sky delta |
 | `SkyBrightness` | TSL2591 | Broadband lux, auto-gain |
 | `SkyQuality` | TSL2591 | SQM mag/arcsec² |
-| `TimeSinceLastUpdate(name)` | — | All implemented sensors + `""` (LatestUpdateTime) |
+| `Humidity` | DHT11/22, BME280 | Implemented only for `dhtType` 1, 2, 5 |
+| `Pressure` | BMP180/280, BME280 | hPa, station pressure; `dhtType` 3–5 |
+| `DewPoint` | DHT11/22, BME280 | Magnus formula from `dhtData` temperature + humidity |
+| `TimeSinceLastUpdate(name)` | — | All implemented sensors + `""` (LatestUpdateTime, includes `dhtData.lastUpdateMs`) |
 | `SensorDescription(name)` | — | All implemented sensors |
 | `AveragePeriod` | NVS | Persisted across reboots |
 | `Refresh` | — | Forces immediate sensor read |

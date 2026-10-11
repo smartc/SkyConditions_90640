@@ -2,14 +2,14 @@
 
 ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 infrared thermal camera and TSL2591 sky brightness sensor.  Provides a fully standards-compliant Alpaca API for sky temperature, cloud cover, sky brightness, and sky quality monitoring — plus a live thermal viewer and trend charts in the browser.
 
-**Current version: 0.6.3**
+**Current version: 0.6.4**
 
 ---
 
 ## Features
 
 - **ASCOM Alpaca ObservingConditions** (device 0, port 11111, Interface v1)
-  - SkyTemperature, Temperature, CloudCover, SkyBrightness, SkyQuality, Humidity (when DHT/BME280 enabled)
+  - SkyTemperature, Temperature, CloudCover, SkyBrightness, SkyQuality, plus Humidity / Pressure / DewPoint when an ambient sensor (DHT / BMP / BME280) is enabled
   - TimeSinceLastUpdate (all sensors, including LatestUpdateTime via empty SensorName)
   - SensorDescription, AveragePeriod, Refresh
 - **ASCOM Alpaca SafetyMonitor** (device 0, port 11111, Interface v1)
@@ -192,13 +192,17 @@ All three devices are served on port **11111**.  Setup/UI URLs on port 11111 red
 | ASCOM Property | Source | Notes |
 |----------------|--------|-------|
 | `SkyTemperature` | MLX90640 | Average of center 16×12 (192) pixels |
-| `Temperature` | MLX90640 / ambient sensor | Die temp, or ambient sensor reading when enabled and valid |
+| `Temperature` | Ambient sensor / MLX90640 | Ambient sensor (DHT/BMP/BME280) when one is configured; MLX90640 die temp otherwise |
 | `CloudCover` | MLX90640 | Configurable: mean or per-pixel method (Setup page) |
 | `SkyBrightness` | TSL2591 | Broadband lux with auto-gain |
 | `SkyQuality` | TSL2591 | mag/arcsec² from SQM formula |
 | `Humidity` | DHT / BME280 | %RH — only implemented when a humidity-capable sensor is enabled |
+| `Pressure` | BMP180 / BMP280 / BME280 | Station (unadjusted) pressure in hPa — only implemented when a pressure-capable sensor is enabled |
+| `DewPoint` | DHT / BME280 | °C, calculated (Magnus formula) from ambient temperature and humidity |
 
-DewPoint, Pressure, RainRate, StarFWHM, WindDirection, WindGust, WindSpeed return `NotImplementedException`.
+Environmental properties report `ValueNotSetException` (1026) while the configured sensor has no valid reading; their `SensorDescription` / `TimeSinceLastUpdate` follow the same rules, and `TimeSinceLastUpdate("")` includes the ambient sensor's last read.
+
+RainRate, StarFWHM, WindDirection, WindGust, WindSpeed return `NotImplementedException`.
 
 ### SafetyMonitor (device 0)
 
@@ -266,7 +270,7 @@ Enable in Setup → MQTT.  The device publishes to `<prefix>/state` every 30 sec
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.6.3"
+  "ip": "192.168.x.x",  "version": "0.6.4"
 }
 ```
 
