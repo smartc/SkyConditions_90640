@@ -4,8 +4,11 @@
  * ASCOM Alpaca ObservingConditions HTTP server (port 11111) and UDP discovery.
  * Uses Arduino WebServer – all handlers run on the main loop; no locking needed.
  *
- * Implemented sensors:  SkyTemperature, Temperature, SkyBrightness, SkyQuality, CloudCover
- * All other ObservingConditions sensors return PropertyNotImplementedException (1035).
+ * Implemented sensors:  SkyTemperature, Temperature, SkyBrightness, SkyQuality, CloudCover,
+ *                       plus (depending on deviceConfig.dhtType) Humidity, Pressure, DewPoint.
+ * Temperature comes from the environmental sensor (DHT/BMP/BME) when one is configured,
+ * otherwise from the MLX90640 die temperature.
+ * All other ObservingConditions sensors return NotImplementedException (1024).
  */
 
 #include "alpaca.h"
@@ -336,10 +339,69 @@ static void handleGetSkyTemperature()
   sendDouble(skyConditions.getSkyTemperature());
 }
 
+// ---------------------------------------------------------------------------
+// Environmental sensor (deviceConfig.dhtType: 1=DHT11, 2=DHT22, 3=BMP180,
+// 4=BMP280, 5=BME280).  Whether a property is implemented depends only on the
+// configured type, so the property, SensorDescription and TimeSinceLastUpdate
+// always agree; a configured sensor with no valid reading yet → ValueNotSet.
+// ---------------------------------------------------------------------------
+
+static bool envHasTemperature() { return deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 5; }
+static bool envHasHumidity()    { return deviceConfig.dhtType == 1 || deviceConfig.dhtType == 2 || deviceConfig.dhtType == 5; }
+static bool envHasPressure()    { return deviceConfig.dhtType >= 3 && deviceConfig.dhtType <= 5; }
+
+static const char *envSensorName()
+{
+  switch (deviceConfig.dhtType) {
+    case 1:  return "DHT11";
+    case 2:  return "DHT22";
+    case 3:  return "BMP180";
+    case 4:  return "BMP280";
+    case 5:  return "BME280";
+    default: return "";
+  }
+}
+
+// Dew point (°C) via the Magnus formula (Sonntag 1990 constants).
+static double dewPointC(double t, double rh)
+{
+  if (rh < 0.1)   rh = 0.1;   // ln(0) guard
+  if (rh > 100.0) rh = 100.0;
+  const double a = 17.62, b = 243.12;
+  double g = log(rh / 100.0) + a * t / (b + t);
+  return b * g / (a - g);
+}
+
 static void handleGetTemperature()
 {
+  if (envHasTemperature()) {
+    if (!dhtData.valid) { sendValueNotSet(); return; }
+    sendDouble(dhtData.temperature);
+    return;
+  }
   if (!skyConditions.hasData()) { sendValueNotSet(); return; }
   sendDouble(skyConditions.getAmbientTemperature());
+}
+
+static void handleGetHumidity()
+{
+  if (!envHasHumidity()) { sendNotImplemented(); return; }
+  if (!dhtData.valid)    { sendValueNotSet();    return; }
+  sendDouble(dhtData.humidity);
+}
+
+static void handleGetPressure()
+{
+  if (!envHasPressure()) { sendNotImplemented(); return; }
+  if (!dhtData.valid)    { sendValueNotSet();    return; }
+  sendDouble(dhtData.pressure);
+}
+
+static void handleGetDewPoint()
+{
+  if (!envHasHumidity()) { sendNotImplemented(); return; }
+  if (!dhtData.valid)    { sendValueNotSet();    return; }
+  sendDouble(dewPointC(dhtData.temperature, dhtData.humidity));
 }
 
 static void handleGetCloudCover()
@@ -388,13 +450,26 @@ static void handleGetTimeSinceLastUpdate()
 
   if (sensorLow == "") {
     // Empty SensorName = LatestUpdateTime: time since the most recent update across ALL sensors.
-    if (!skyConditions.hasData() && !skyConditions.hasBrightnessData()) { sendValueNotSet(); return; }
+    bool envHasData = envHasTemperature() && dhtData.lastUpdateMs != 0;
+    if (!skyConditions.hasData() && !skyConditions.hasBrightnessData() && !envHasData) {
+      sendValueNotSet(); return;
+    }
     unsigned long mostRecent = skyConditions.hasData() ? skyConditions.getLastUpdateMillis() : 0;
     if (skyConditions.hasBrightnessData()) {
       unsigned long bMillis = skyConditions.getLastBrightnessMillis();
       if (bMillis > mostRecent) mostRecent = bMillis;
     }
+    if (envHasData && dhtData.lastUpdateMs > mostRecent) mostRecent = dhtData.lastUpdateMs;
     sendDouble((millis() - mostRecent) / 1000.0);
+  } else if (sensorLow == "temperature" && envHasTemperature()) {
+    if (!dhtData.valid) { sendValueNotSet(); return; }
+    sendDouble((millis() - dhtData.lastUpdateMs) / 1000.0);
+  } else if ((sensorLow == "humidity" || sensorLow == "dewpoint") && envHasHumidity()) {
+    if (!dhtData.valid) { sendValueNotSet(); return; }
+    sendDouble((millis() - dhtData.lastUpdateMs) / 1000.0);
+  } else if (sensorLow == "pressure" && envHasPressure()) {
+    if (!dhtData.valid) { sendValueNotSet(); return; }
+    sendDouble((millis() - dhtData.lastUpdateMs) / 1000.0);
   } else if (sensorLow == "skytemperature" || sensorLow == "temperature" || sensorLow == "cloudcover") {
     if (!skyConditions.hasData()) { sendValueNotSet(); return; }
     sendDouble((millis() - skyConditions.getLastUpdateMillis()) / 1000.0);
@@ -423,7 +498,16 @@ static void handleGetSensorDescription()
   if (sensorLow == "skytemperature") {
     json["Value"] = "Average temperature of the center 50% of the MLX90640 FOV (192 pixels, 16x12)";
   } else if (sensorLow == "temperature") {
-    json["Value"] = "MLX90640 sensor die/ambient temperature";
+    json["Value"] = envHasTemperature()
+                    ? String(envSensorName()) + " ambient air temperature"
+                    : String("MLX90640 sensor die/ambient temperature");
+  } else if (sensorLow == "humidity" && envHasHumidity()) {
+    json["Value"] = String(envSensorName()) + " relative humidity";
+  } else if (sensorLow == "pressure" && envHasPressure()) {
+    json["Value"] = String(envSensorName()) + " station (unadjusted) barometric pressure in hPa";
+  } else if (sensorLow == "dewpoint" && envHasHumidity()) {
+    json["Value"] = String("Dew point calculated (Magnus formula) from ") + envSensorName() +
+                    " temperature and humidity";
   } else if (sensorLow == "skybrightness") {
     json["Value"] = "TSL2591 broadband visible+IR illuminance in lux";
   } else if (sensorLow == "skyquality") {
@@ -434,16 +518,6 @@ static void handleGetSensorDescription()
     json["ErrorNumber"]  = 1024;  // NotImplementedException – tells Conform not to retry
     json["ErrorMessage"] = "Sensor not implemented";
   }
-  sendJSON(json);
-}
-
-static void handleGetHumidity()
-{
-  // Humidity from DHT11/DHT22 (types 1-2) or BME280 (type 5); BMP180/BMP280 have no humidity
-  bool hasHumidity = ((deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 2) || deviceConfig.dhtType == 5);
-  if (!hasHumidity || !dhtData.valid) { sendNotImplemented(); return; }
-  StaticJsonDocument<256> json;
-  json["Value"] = round(dhtData.humidity * 10.0) / 10.0;
   sendJSON(json);
 }
 
@@ -779,11 +853,14 @@ static void registerRoutes()
   alpacaServer.on((base + "/skybrightness").c_str(), HTTP_GET, handleGetSkyBrightness);
   alpacaServer.on((base + "/skyquality").c_str(),    HTTP_GET, handleGetSkyQuality);
 
-  // ObservingConditions – not implemented sensors
   alpacaServer.on((base + "/cloudcover").c_str(),    HTTP_GET, handleGetCloudCover);
-  alpacaServer.on((base + "/dewpoint").c_str(),      HTTP_GET, sendNotImplemented);
+
+  // ObservingConditions – environmental sensor (implemented per deviceConfig.dhtType)
+  alpacaServer.on((base + "/dewpoint").c_str(),      HTTP_GET, handleGetDewPoint);
   alpacaServer.on((base + "/humidity").c_str(),      HTTP_GET, handleGetHumidity);
-  alpacaServer.on((base + "/pressure").c_str(),      HTTP_GET, sendNotImplemented);
+  alpacaServer.on((base + "/pressure").c_str(),      HTTP_GET, handleGetPressure);
+
+  // ObservingConditions – not implemented sensors
   alpacaServer.on((base + "/rainrate").c_str(),      HTTP_GET, sendNotImplemented);
   alpacaServer.on((base + "/starfwhm").c_str(),      HTTP_GET, sendNotImplemented);
   alpacaServer.on((base + "/winddirection").c_str(), HTTP_GET, sendNotImplemented);
