@@ -7,6 +7,7 @@
 #include "config_store.h"
 #include "../sensors/sky_sensor.h"
 #include "../sensors/rain_sensor.h"
+#include "../sensors/dht_sensor.h"
 #include "../webserver/web_ui_handler.h"
 #include "../debug/debug.h"
 #include <Arduino.h>
@@ -126,6 +127,19 @@ static void publishSensor(const String &deviceId,
   delay(50);
 }
 
+// Empty retained config payload → HA deletes the entity (used when the
+// configured ambient sensor no longer provides that reading).
+static void removeSensor(const String &deviceId, const char *objId)
+{
+  String topic = "homeassistant/sensor/" + deviceId + "_" + String(objId) + "/config";
+  if (mqttClient.publish(topic.c_str(), "", /*retain=*/true)) {
+    Debug.printf("MQTT discovery removed: %s\n", objId);
+  } else {
+    Debug.printf("MQTT discovery remove FAIL: %s\n", objId);
+  }
+  delay(50);
+}
+
 // ---------------------------------------------------------------------------
 // publishDiscovery()
 // ---------------------------------------------------------------------------
@@ -179,6 +193,21 @@ void publishDiscovery()
                 "{{ value_json.frame_median | round(1) }}",
                 "°C", "temperature", "mdi:thermometer");
 
+  // ── Ambient sensor humidity / pressure (only when the sensor provides them) ─
+  if (envHasHumidity())
+    publishSensor(devId, "Humidity",          "humidity",
+                  "{{ value_json.humidity | round(1) }}",
+                  "%", "humidity", "mdi:water-percent");
+  else
+    removeSensor(devId, "humidity");
+
+  if (envHasPressure())
+    publishSensor(devId, "Pressure",          "pressure",
+                  "{{ value_json.pressure | round(1) }}",
+                  "hPa", "atmospheric_pressure", "mdi:gauge");
+  else
+    removeSensor(devId, "pressure");
+
   // ── Rain sensor binary sensor ──────────────────────────────────────────────
   {
     DynamicJsonDocument doc(768);
@@ -211,7 +240,8 @@ void publishDiscovery()
     doc["unique_id"]          = devId + "_sky_thermal_image";
     doc["image_topic"]        = topicImage;   // NOTE: image_topic, not topic
     doc["content_type"]       = "image/jpeg";
-    doc["image_encoding"]     = "none";       // raw binary JPEG, not base64
+    // image_encoding omitted → raw binary (HA only accepts "b64" or "raw";
+    // the previous "none" failed validation and HA dropped the entity)
     doc["availability_topic"] = topicAvailability;
     addDeviceInfo(doc);
 
@@ -271,7 +301,7 @@ void publishStatusToMQTT()
   if (!skyConditions.hasData()) return;
 
   // ── State JSON ─────────────────────────────────────────────────────────────
-  DynamicJsonDocument doc(512);
+  DynamicJsonDocument doc(768);
 
   doc["sky_temp"]          = round(skyConditions.getSkyTemperature()    * 100.0f) / 100.0f;
   doc["ambient_temp"]      = round(skyConditions.getAmbientTemperature()* 100.0f) / 100.0f;
@@ -283,6 +313,12 @@ void publishStatusToMQTT()
   doc["cloud_cover_pixel"] = round(skyConditions.getCloudCoverPixel()   *  10.0f) /  10.0f;
   doc["lux"]               = skyConditions.getLux();
   doc["sqm"]               = round(skyConditions.getSqm()               * 100.0f) / 100.0f;
+  // Omitted until the ambient sensor has a first valid read, so HA never
+  // records a placeholder 0 %/0 hPa.
+  if (envHasHumidity() && dhtData.lastUpdateMs != 0)
+    doc["humidity"]        = round(dhtData.humidity                     *  10.0f) /  10.0f;
+  if (envHasPressure() && dhtData.lastUpdateMs != 0)
+    doc["pressure"]        = round(dhtData.pressure                     *  10.0f) /  10.0f;
   doc["rain_wet"]          = rainIsWet();
   doc["rain_relay"]        = rainData.relayWet;
   doc["rain_modbus"]       = rainData.modbusOk ? (bool)rainData.modbusWet : (bool)false;
