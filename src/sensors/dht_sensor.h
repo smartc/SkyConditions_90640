@@ -2,6 +2,7 @@
 #define DHT_SENSOR_H
 
 #include <Arduino.h>
+#include "config_store.h"
 
 /*
  * Optional ambient temperature sensor (DHT or BMP180).
@@ -28,6 +29,12 @@ struct DhtData {
 };
 
 extern DhtData dhtData;
+
+// Which readings the configured sensor type provides (shared by Alpaca, MQTT
+// and the Web UI so all three agree on what is reported).
+inline bool envHasTemperature() { return deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 5; }
+inline bool envHasHumidity()    { return deviceConfig.dhtType == 1 || deviceConfig.dhtType == 2 || deviceConfig.dhtType == 5; }
+inline bool envHasPressure()    { return deviceConfig.dhtType >= 3 && deviceConfig.dhtType <= 5; }
 
 void dhtSetup();   // call once in setup() when dhtType != 0
 void dhtLoop();    // call every loop() iteration when dhtType != 0

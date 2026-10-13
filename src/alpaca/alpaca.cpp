@@ -346,9 +346,7 @@ static void handleGetSkyTemperature()
 // always agree; a configured sensor with no valid reading yet → ValueNotSet.
 // ---------------------------------------------------------------------------
 
-static bool envHasTemperature() { return deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 5; }
-static bool envHasHumidity()    { return deviceConfig.dhtType == 1 || deviceConfig.dhtType == 2 || deviceConfig.dhtType == 5; }
-static bool envHasPressure()    { return deviceConfig.dhtType >= 3 && deviceConfig.dhtType <= 5; }
+// envHasTemperature/Humidity/Pressure() live in dht_sensor.h.
 
 static const char *envSensorName()
 {

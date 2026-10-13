@@ -495,10 +495,10 @@ void broadcastSensorState()
     skyConditions.getLux(),
     skyConditions.getSqm(),
     skyConditions.hasBrightnessData() ? "true" : "false");
-  if (((deviceConfig.dhtType >= 1 && deviceConfig.dhtType <= 2) || deviceConfig.dhtType == 5) && dhtData.valid)
+  if (envHasHumidity() && dhtData.valid)
     len += snprintf(buf + len, sizeof(buf) - len,
                     ",\"dht_hum\":%.1f", dhtData.humidity);
-  if ((deviceConfig.dhtType == 3 || deviceConfig.dhtType == 4 || deviceConfig.dhtType == 5) && dhtData.valid)
+  if (envHasPressure() && dhtData.valid)
     len += snprintf(buf + len, sizeof(buf) - len,
                     ",\"pressure\":%.1f", dhtData.pressure);
   strncat(buf, "}", sizeof(buf) - len - 1);

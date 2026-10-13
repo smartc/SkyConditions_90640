@@ -206,10 +206,13 @@ Implemented in `mqtt_handler.h/.cpp` using the bundled PubSubClient library.
   "frame_min": -18.0,   "frame_max": 25.0,   "frame_median": 4.3,
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
   "lux": 0.0023,        "sqm": 21.5,
+  "humidity": 62.4,     "pressure": 889.0,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.6.2"
+  "ip": "192.168.x.x",  "version": "0.6.5"
 }
 ```
+
+`humidity` / `pressure` are present only when the configured ambient sensor provides them (`envHasHumidity()` / `envHasPressure()` in `dht_sensor.h`, shared with Alpaca and the Web UI) **and** it has had a first valid read.
 
 **Image topic:** `<prefix>/thumbnail` — retained binary JPEG (the same image served at `/thermal.jpg`), published alongside state.
 
@@ -224,7 +227,12 @@ Implemented in `mqtt_handler.h/.cpp` using the bundled PubSubClient library.
 - `sky_brightness` — lx, device_class illuminance
 - `sky_quality` — mag/arcsec²
 - `frame_min_temp` / `frame_max_temp` / `frame_median_temp` — °C
-- `sky_thermal_image` — `image` entity, `image/jpeg`, points to thumbnail topic
+- `humidity` — %, device_class humidity (`dhtType` 1, 2, 5)
+- `pressure` — hPa, device_class atmospheric_pressure (`dhtType` 3–5)
+- `rain_wet` — `binary_sensor`, device_class moisture
+- `sky_thermal_image` — `image` entity, `image/jpeg`, points to thumbnail topic. `image_encoding` is omitted (raw binary); HA only accepts `"b64"` or `"raw"` and rejects anything else.
+
+All `sensor` entities carry `state_class: measurement`. Discovery is published on every (re)connect; when the sensor type doesn't provide humidity/pressure, an empty retained config is published instead so HA removes the stale entity.
 
 **Topic prefix default:** `skyconditions` auto-appended with the lowercase MAC hex to avoid broker collisions.  Set a custom prefix in Setup → MQTT to override.
 
