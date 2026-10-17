@@ -233,6 +233,21 @@ inline String getHomePage()
           "    <div class='stat-value' id='cloud-px' style='color:#b2bec3'>" +
           (skyConditions.hasData() ? String(skyConditions.getCloudCoverPixel(), 0) + "%" : "--") +
           "</div></div>\n";
+  // Reported value (Alpaca CloudCover / MQTT cloud_cover) and the effective
+  // thresholds behind it, so "why is it 0 %?" can be answered at a glance.
+  html += "  <div class='stat-box'><div class='stat-label'>Cloud Cover<br>"
+          "<span style='font-size:0.8em;color:#74b9ff' id='cloud-rep-sub'>Reported</span></div>"
+          "    <div class='stat-value' id='cloud-rep' style='color:#dfe6e9'>" +
+          (skyConditions.hasData() ? String(skyConditions.getCloudCover(), 0) + "%" : "--") +
+          "</div></div>\n";
+  html += "  <div class='stat-box'><div class='stat-label'>Cloud \u0394 Clear / Overcast<br>"
+          "<span style='font-size:0.8em;color:#8899aa' id='cloud-thr-sub'>" +
+          (skyConditions.hasData() ? "at ambient " + String(skyConditions.getCloudAmbient(), 1) + "\u00B0C" : "") +
+          "</span></div>"
+          "    <div class='stat-value' id='cloud-thr' style='color:#b2bec3;font-size:1.2em'>" +
+          (skyConditions.hasData() ? String(skyConditions.getCloudClearEff(), 1) + " / " +
+                                     String(skyConditions.getCloudOvercastEff(), 1) + "\u00B0C" : "--") +
+          "</div></div>\n";
   html += "  <div class='stat-box'><div class='stat-label'>Sky Brightness</div>"
           "    <div class='stat-value' id='lux-val' style='color:#fdcb6e'>" +
           (skyConditions.hasBrightnessData() ? fmtLux(skyConditions.getLux()) : "--") +
@@ -343,14 +358,14 @@ const status  = document.getElementById('ws-status');
 
 // Vertical colour scale beside the thermal view.  Mirrors
 // SkyConditions::getDisplayRange(): fixed mode uses HEAT_MIN..HEAT_MAX;
-// floating mode puts t=0 at ambient − Clear Δ and t=1 at ambient − Overcast Δ
-// (span clamped to ≥ 1 °C), so its labels track ambient.  The magenta cap
-// (HOT_MARKER only) is HEAT_MAX in fixed mode, ambient + HOT_MARGIN floating.
+// floating mode puts t=0 at cloud ambient − effective Clear Δ and t=1 at
+// cloud ambient − effective Overcast Δ (span clamped to ≥ 1 °C), so its labels
+// track ambient.  The magenta cap (HOT_MARKER only) is HEAT_MAX in fixed mode,
+// raw ambient + HOT_MARGIN floating.
 const HEAT_FIXED     = )rawjs" + String(deviceConfig.heatmapRangeMode == 1 ? "true" : "false") + R"rawjs(;
 const HEAT_MIN       = )rawjs" + String(deviceConfig.heatmapFixedMin, 2) + R"rawjs(;
 const HEAT_MAX       = )rawjs" + String(deviceConfig.heatmapFixedMax, 2) + R"rawjs(;
-const CLEAR_DELTA    = )rawjs" + String(deviceConfig.cloudClearDelta, 2) + R"rawjs(;
-const OVERCAST_DELTA = )rawjs" + String(deviceConfig.cloudOvercastDelta, 2) + R"rawjs(;
+const CLOUD_METHOD   = ')rawjs" + String(deviceConfig.cloudCoverMethod == 1 ? "per-pixel" : "mean") + R"rawjs(';
 const HOT_MARKER     = )rawjs" + String(deviceConfig.heatmapHotMarker ? "true" : "false") + R"rawjs(;
 const HOT_MARGIN     = )rawjs" + String(HEATMAP_HOT_MARGIN_C, 1) + R"rawjs(;
 const CBAR_TICKS = 5;
@@ -371,9 +386,9 @@ for (let i = 0; i < CBAR_TICKS; i++) {
   s.textContent = '--';
   cbarTicks.appendChild(s);
 }
-function updateColorBar(amb) {
-  const cold = HEAT_FIXED ? HEAT_MIN : amb - CLEAR_DELTA;
-  const span = Math.max(1, HEAT_FIXED ? HEAT_MAX - HEAT_MIN : CLEAR_DELTA - OVERCAST_DELTA);
+function updateColorBar(amb, ambCloud, clrEff, ovcEff) {
+  const cold = HEAT_FIXED ? HEAT_MIN : ambCloud - clrEff;
+  const span = Math.max(1, HEAT_FIXED ? HEAT_MAX - HEAT_MIN : clrEff - ovcEff);
   const spans = cbarTicks.children;
   for (let i = 0; i < CBAR_TICKS; i++) {
     const t = 1 - i / (CBAR_TICKS - 1);          // top = warm end
@@ -387,9 +402,12 @@ function updateColorBar(amb) {
 }
 )rawjs";
   if (deviceConfig.heatmapRangeMode == 1)
-    html += "updateColorBar(0);\n";
+    html += "updateColorBar(0, 0, 0, 0);\n";
   else if (skyConditions.hasData())
-    html += "updateColorBar(" + String(skyConditions.getAmbientTemperature(), 2) + ");\n";
+    html += "updateColorBar(" + String(skyConditions.getAmbientTemperature(), 2) + "," +
+            String(skyConditions.getCloudAmbient(), 2) + "," +
+            String(skyConditions.getCloudClearEff(), 2) + "," +
+            String(skyConditions.getCloudOvercastEff(), 2) + ");\n";
   html += R"rawjs(
 
 function fmtLux(lux) {
@@ -431,9 +449,14 @@ function connect() {
         if (d.amb !== undefined) {
           const nd = d.has_data, nb = d.has_brightness;
           document.getElementById('amb-temp').textContent   = nd ? d.amb.toFixed(1)        + '°C'        : '--';
-          if (nd) updateColorBar(d.amb);
+          if (nd) updateColorBar(d.amb, d.amb_cloud, d.clr_eff, d.ovc_eff);
           document.getElementById('cloud-mean').textContent = nd ? d.cloud_mean.toFixed(0) + '%'         : '--';
           document.getElementById('cloud-px').textContent   = nd ? d.cloud_px.toFixed(0)   + '%'         : '--';
+          document.getElementById('cloud-rep').textContent  = nd ? d.cloud.toFixed(0)      + '%'         : '--';
+          document.getElementById('cloud-rep-sub').textContent =
+            'Reported (' + CLOUD_METHOD + (d.cloud_n > 1 ? ', median of ' + d.cloud_n : '') + ')';
+          document.getElementById('cloud-thr').textContent  = nd ? d.clr_eff.toFixed(1) + ' / ' + d.ovc_eff.toFixed(1) + '°C' : '--';
+          document.getElementById('cloud-thr-sub').textContent = nd ? 'at ambient ' + d.amb_cloud.toFixed(1) + '°C' : '';
           document.getElementById('lux-val').textContent    = nb ? fmtLux(d.lux)                         : '--';
           document.getElementById('sqm-val').textContent    = nb ? d.sqm.toFixed(2)        + ' mag/″²'   : '--';
           const humEl = document.getElementById('hum-val');
@@ -626,6 +649,8 @@ inline String getSetupPage()
   html += "<h2>Calibration</h2>\n";
   html += "<p style='font-size:0.85em;color:#8899aa'>Settings are saved persistently in NVS flash.</p>\n";
   html += "<form action='/save_config' method='POST'>\n";
+  // Tells /save_config that unticked checkboxes mean "off" (see readCheckbox()).
+  html += "<input type='hidden' name='form' value='full'>\n";
   html += "<table><tr><th>Parameter</th><th>Value</th><th>Description</th></tr>\n";
 
   String inpStyle = "width:90px;background:#1a1a2e;color:#e0e0e0;"
@@ -653,6 +678,50 @@ inline String getSetupPage()
           "<td><input type='number' name='cloudOvercast' step='0.5' value='" +
           String(deviceConfig.cloudOvercastDelta, 1) + "' style='" + inpStyle + "'></td>"
           "<td>Ambient \u2212 Sky \u2264 this \u2192 100\u202F% cloud cover (overcast)</td></tr>\n";
+
+  html += "<tr><td>Cloud Ambient Slope</td>"
+          "<td><input type='number' name='cldAmbSlope' step='0.01' min='-2' max='2' value='" +
+          String(deviceConfig.cloudAmbSlope, 2) + "' style='" + inpStyle + "'></td>"
+          "<td>Shift both thresholds by this \u00D7 (ambient \u2212 reference). A clear sky's "
+          "Ambient \u2212 Sky grows with ambient; 0 (default) = fixed thresholds.</td></tr>\n";
+
+  html += "<tr><td>Cloud Ambient Reference (\u00B0C)</td>"
+          "<td><input type='number' name='cldAmbRef' step='0.5' value='" +
+          String(deviceConfig.cloudAmbRef, 1) + "' style='" + inpStyle + "'></td>"
+          "<td>Ambient at which the Clear / Overcast deltas above apply unchanged</td></tr>\n";
+
+  {
+    String dewNote = envHasHumidity() ? ""
+                   : " <b>Needs a humidity sensor (DHT11/22, BME280); ignored without one.</b>";
+    html += "<tr><td>Cloud Dew-Point Slope</td>"
+            "<td><input type='number' name='cldDewSlope' step='0.01' min='-2' max='2' value='" +
+            String(deviceConfig.cloudDewSlope, 2) + "' style='" + inpStyle + "'></td>"
+            "<td>Optional extra shift \u00D7 (dew point \u2212 reference). 0 (default) = off." +
+            dewNote + "</td></tr>\n";
+  }
+
+  html += "<tr><td>Cloud Dew-Point Reference (\u00B0C)</td>"
+          "<td><input type='number' name='cldDewRef' step='0.5' value='" +
+          String(deviceConfig.cloudDewRef, 1) + "' style='" + inpStyle + "'></td>"
+          "<td>Dew point at which the dew-point term is zero</td></tr>\n";
+
+  html += "<tr><td>Cloud Ambient Smoothing (s)</td>"
+          "<td><input type='number' name='cldAmbTau' step='10' min='0' max='" +
+          String(CLOUD_AMB_TAU_MAX_S) + "' value='" +
+          String(deviceConfig.cloudAmbTau) + "' style='" + inpStyle + "'></td>"
+          "<td>Time constant of an exponential average on the ambient used for cloud cover "
+          "(0 = off). Keep it short (60\u2013180\u202Fs) so fronts still register; the filter "
+          "resets on a jump of more than " + String(CLOUD_AMB_RESET_C, 0) + "\u202F\u00B0C. "
+          "The reported Ambient is never smoothed.</td></tr>\n";
+
+  html += "<tr><td colspan='3' style='font-size:0.85em;color:#8899aa'>"
+          "Effective thresholds = Clear/Overcast \u0394 + slope \u00D7 (ambient \u2212 ref)"
+          " + dew slope \u00D7 (dew point \u2212 ref). ";
+  if (skyConditions.hasData())
+    html += "Now: clear \u2265 " + String(skyConditions.getCloudClearEff(), 1) +
+            "\u202F\u00B0C, overcast \u2264 " + String(skyConditions.getCloudOvercastEff(), 1) +
+            "\u202F\u00B0C at cloud ambient " + String(skyConditions.getCloudAmbient(), 1) + "\u202F\u00B0C.";
+  html += "</td></tr>\n";
 
   // ── Sky History ────────────────────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>Sky History (/skyhistory calendar)</th></tr>\n";
@@ -742,10 +811,14 @@ function updateHeat() {
   // ── ASCOM ─────────────────────────────────────────────────────────────────
   html += "<tr><th colspan='3' style='background:#0a2a50'>ASCOM</th></tr>\n";
 
-  html += "<tr><td>Average Period (s)</td>"
-          "<td><input type='number' name='avgPeriod' min='0' step='0.1' value='" +
-          String(deviceConfig.averagePeriod, 1) + "' style='" + inpStyle + "'></td>"
-          "<td>ObservingConditions AveragePeriod; persisted across reboots</td></tr>\n";
+  html += "<tr><td>Average Period (h)</td>"
+          "<td><input type='number' name='avgPeriod' min='0' step='any' value='" +
+          String(deviceConfig.averagePeriod, 4) + "' style='" + inpStyle + "'></td>"
+          "<td>ObservingConditions AveragePeriod in hours (ASCOM), persisted across reboots. "
+          "Alpaca CloudCover and MQTT cloud_cover report the median over this period; 0 = latest frame. "
+          "History holds " + String(CLOUD_AVG_SAMPLES) + " frames (\u2248" +
+          String(CLOUD_AVG_SAMPLES * (FRAME_INTERVAL_MS / 1000) / 60) +
+          "\u202Fmin); longer periods use all of it. E.g. 0.0167 = 1\u202Fmin.</td></tr>\n";
 
   html += "<tr><td>Cloud Cover Method<br><span style='font-size:0.8em;color:#8899aa'>(Alpaca reporting)</span></td><td>";
   html += "<select name='cloudMethod' style='" + inpStyle + "width:130px;'>";

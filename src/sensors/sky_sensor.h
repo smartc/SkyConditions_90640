@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "config.h"
+#include "cloud_model.h"
 
 /*
  * SkyConditions
@@ -21,8 +22,11 @@ public:
   SkyConditions();
 
   // Called from the main loop each time a new thermal frame arrives.
-  // frame must be SENSOR_PIXELS floats in row-major order.
-  void update(float *frame, float ambientTemp);
+  // frame must be SENSOR_PIXELS floats in row-major order.  dewPoint is NAN
+  // when no humidity reading is available.  ambientFromEnv is true when
+  // ambientTemp came from the external sensor rather than the MLX die; a
+  // change of source resets the cloud-cover ambient smoothing.
+  void update(float *frame, float ambientTemp, float dewPoint, bool ambientFromEnv);
 
   // Set/cleared by the ASCOM PUT /refresh handler and the main loop.
   bool isRefreshRequested() const { return _refreshRequested; }
@@ -48,10 +52,23 @@ public:
   unsigned long getLastBrightnessMillis() const { return _lastBrightnessMillis; }
 
   // Cloud cover (0–100 %).  Valid whenever hasData() is true.
-  // getCloudCover() returns whichever method is selected in deviceConfig.cloudCoverMethod.
-  float getCloudCover()      const;
-  float getCloudCoverMean()  const { return _cloudCover; }
-  float getCloudCoverPixel() const { return _cloudCoverPixel; }
+  // getCloudCover() is the reported value (Alpaca CloudCover, MQTT
+  // cloud_cover): the median of the method selected in
+  // deviceConfig.cloudCoverMethod over the last AveragePeriod hours.
+  // getCloudCoverInstant() is the same method for the latest frame only;
+  // getCloudCoverMean()/Pixel() are the latest frame's per-method values.
+  float getCloudCover()        const;
+  float getCloudCoverInstant() const;
+  float getCloudCoverMean()    const { return _cloudCover; }
+  float getCloudCoverPixel()   const { return _cloudCoverPixel; }
+  int   getCloudAvgSamples()   const { return _cloudAvgSamples; }
+
+  // Cloud-cover inputs for the latest frame: the (optionally smoothed)
+  // ambient used for (ambient − sky), and the ambient/dew-point compensated
+  // clear / overcast thresholds.
+  float getCloudAmbient()       const { return _cloudAmbient; }
+  float getCloudClearEff()      const { return _cloudThresholds.clear; }
+  float getCloudOvercastEff()   const { return _cloudThresholds.overcast; }
 
   // ASCOM device state (read/written by alpaca.cpp handlers).
   bool   getConnected()      const { return _connected; }
@@ -73,9 +90,9 @@ public:
 private:
   // Temperature mapped to palette position 0 (coldEnd), the span to the top of
   // the palette, and the threshold above which pixels get HEATMAP_HOT_INDEX.
-  // Floating mode anchors to the cloud-cover deltas around ambient; fixed mode
-  // uses deviceConfig.heatmapFixedMin/Max.  Display only – cloud cover
-  // calculations are unaffected.
+  // Floating mode anchors to the effective cloud-cover thresholds around the
+  // cloud-cover ambient; fixed mode uses deviceConfig.heatmapFixedMin/Max.
+  // Display only – cloud cover calculations are unaffected.
   void getDisplayRange(float &coldEnd, float &range, float &hotAbove) const;
 
   // Palette index (0..HEATMAP_HOT_INDEX) for each pixel of the current frame.
@@ -104,8 +121,16 @@ private:
   unsigned long _lastBrightnessMillis;
 
   // Cloud cover derived from thermal delta.
-  float         _cloudCover;       // mean method (center FOV average delta)
-  float         _cloudCoverPixel;  // per-pixel method (center FOV pixel-by-pixel)
+  float           _cloudCover;       // mean method (center FOV average delta)
+  float           _cloudCoverPixel;  // per-pixel method (selected region pixel-by-pixel)
+  float           _cloudCoverAvg;      // AveragePeriod median, mean method
+  float           _cloudCoverPixelAvg; // AveragePeriod median, per-pixel method
+  int             _cloudAvgSamples;    // frames in the current median
+  float           _cloudAmbient;     // ambient used for cloud cover (smoothed if enabled)
+  bool            _ambientFromEnv;   // source of the previous frame's ambient
+  CloudThresholds _cloudThresholds;  // effective thresholds for the latest frame
+  AmbientSmoother _ambientSmoother;
+  CloudCoverWindow _cloudWindow;
 
   // ASCOM device state.
   double        _averagePeriod;
@@ -113,6 +138,7 @@ private:
   volatile bool _refreshRequested;
 
   void computeStats();
+  void updateCloudAverage();
 };
 
 // Singleton shared between the main sketch, web_ui_handler, and alpaca.

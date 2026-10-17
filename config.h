@@ -71,6 +71,17 @@
 #define BRIGHTNESS_INTERVAL_MS  5000   // 5 s (TSL2591)
 #define JPEG_INTERVAL_MS        30000  // 30 s  thermal JPEG snapshot
 
+// Cloud cover averaging (ASCOM AveragePeriod, hours).  Alpaca CloudCover and
+// MQTT cloud_cover report the median of per-frame cloud cover over the period;
+// the ring holds CLOUD_AVG_SAMPLES frames (≈ 33 min at FRAME_INTERVAL_MS) and
+// longer periods use all of it.
+#define CLOUD_AVG_SAMPLES       400
+
+// Ambient smoothing for cloud cover (deviceConfig.cloudAmbTau): the filter
+// snaps to the raw reading when the two differ by more than this.
+#define CLOUD_AMB_RESET_C       3.0f
+#define CLOUD_AMB_TAU_MAX_S     1800
+
 // Ambient temperature sensor (optional – see dht_sensor.h/.cpp)
 // Sensor type is selected at runtime via Setup page → ambientSensorType (NVS key "dhtType"):
 //   0 = disabled, 1 = DHT11, 2 = DHT22, 3 = BMP180
@@ -93,7 +104,7 @@
 // Device Information
 #define SERVER_NAME       "SkyConditions_90640"
 #define MANUFACTURER      "Corey Smart"
-#define MANUFACTURER_V    "0.6.5"
+#define MANUFACTURER_V    "0.7.0"
 #define LOCATION          "Observatory"
 #define DEVICE_NAME       "MLX90640 Sky Conditions Sensor"
 #define DESCRIPTION       "ESP32-S3 ASCOM Alpaca ObservingConditions device using MLX90640 thermal camera"

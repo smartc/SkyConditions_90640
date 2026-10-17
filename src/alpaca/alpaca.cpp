@@ -360,16 +360,6 @@ static const char *envSensorName()
   }
 }
 
-// Dew point (°C) via the Magnus formula (Sonntag 1990 constants).
-static double dewPointC(double t, double rh)
-{
-  if (rh < 0.1)   rh = 0.1;   // ln(0) guard
-  if (rh > 100.0) rh = 100.0;
-  const double a = 17.62, b = 243.12;
-  double g = log(rh / 100.0) + a * t / (b + t);
-  return b * g / (a - g);
-}
-
 static void handleGetTemperature()
 {
   if (envHasTemperature()) {
@@ -399,7 +389,7 @@ static void handleGetDewPoint()
 {
   if (!envHasHumidity()) { sendNotImplemented(); return; }
   if (!dhtData.valid)    { sendValueNotSet();    return; }
-  sendDouble(dewPointC(dhtData.temperature, dhtData.humidity));
+  sendDouble(cloudDewPointC(dhtData.temperature, dhtData.humidity));
 }
 
 static void handleGetCloudCover()
@@ -511,7 +501,7 @@ static void handleGetSensorDescription()
   } else if (sensorLow == "skyquality") {
     json["Value"] = "Sky quality in mag/arcsec^2 derived from TSL2591 lux reading";
   } else if (sensorLow == "cloudcover") {
-    json["Value"] = "Cloud cover % estimated from ambient-sky temperature deficit (MLX90640)";
+    json["Value"] = "Cloud cover % estimated from ambient-sky temperature deficit (MLX90640), median over AveragePeriod";
   } else {
     json["ErrorNumber"]  = 1024;  // NotImplementedException – tells Conform not to retry
     json["ErrorMessage"] = "Sensor not implemented";

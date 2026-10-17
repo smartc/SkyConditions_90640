@@ -46,6 +46,8 @@ The ASCOM Alpaca protocol is implemented directly using the Arduino `WebServer` 
 | `config_store.h/.cpp` | `DeviceConfig` struct + NVS Preferences load/save |
 | `debug.h/.cpp` | Conditional serial debug wrapper (`Debug.print*`) |
 | `sky_sensor.h/.cpp` | `SkyConditions` class – sensor data, stats, cloud cover, WebSocket frame |
+| `cloud_model.h/.cpp` | Pure cloud-cover maths (no Arduino deps): effective thresholds, per-pixel cover, ambient EMA, AveragePeriod median window |
+| `tools/cloud_replay/` | Desktop g++ harness for `cloud_model.cpp`: `--selftest` unit checks + replay of CloudRoll CSV / calibration data |
 | `alpaca.h/.cpp` | ASCOM Alpaca HTTP server (port 11111) + UDP discovery FreeRTOS task |
 | `web_ui_handler.h/.cpp` | Arduino `WebServer` (port 80) + `WebSocketsServer` (port 81) |
 | `html_templates.h` | Inline HTML/CSS/JS generators for home, trends, and setup pages |
@@ -77,7 +79,7 @@ The Alpaca protocol is implemented from scratch in `alpaca.cpp` using the Arduin
 |-------------------|--------|-------|
 | `SkyTemperature` | MLX90640 | Average of center 16×12 = 192 pixels |
 | `Temperature` | Ambient sensor / MLX90640 | `dhtData` when `dhtType != 0` (1026 until a valid read); MLX90640 die temp otherwise |
-| `CloudCover` | MLX90640 | Linear interp on ambient−sky delta |
+| `CloudCover` | MLX90640 | Linear interp on ambient−sky delta (ambient-compensated thresholds); median over `AveragePeriod` |
 | `SkyBrightness` | TSL2591 | Broadband lux, auto-gain |
 | `SkyQuality` | TSL2591 | SQM mag/arcsec² |
 | `Humidity` | DHT11/22, BME280 | Implemented only for `dhtType` 1, 2, 5 |
@@ -85,7 +87,7 @@ The Alpaca protocol is implemented from scratch in `alpaca.cpp` using the Arduin
 | `DewPoint` | DHT11/22, BME280 | Magnus formula from `dhtData` temperature + humidity |
 | `TimeSinceLastUpdate(name)` | — | All implemented sensors + `""` (LatestUpdateTime, includes `dhtData.lastUpdateMs`) |
 | `SensorDescription(name)` | — | All implemented sensors |
-| `AveragePeriod` | NVS | Persisted across reboots |
+| `AveragePeriod` | NVS | **Hours** (ASCOM); persisted across reboots; median window for `CloudCover` |
 | `Refresh` | — | Forces immediate sensor read |
 
 All other `ObservingConditions` properties return `NotImplementedException` (error 1024).
@@ -100,6 +102,17 @@ All other `ObservingConditions` properties return `NotImplementedException` (err
 ### UDP Discovery
 
 Discovery runs in a dedicated FreeRTOS task pinned to Core 0 (`alpaca_disc`, stack 2048 bytes, priority 1).  This ensures immediate responses even while `mlx.getFrame()` blocks Core 1 for ~500 ms at 2 Hz.  The task owns its own `WiFiUDP` object; `handleAlpacaDiscovery()` in the main loop is a no-op.
+
+### Cloud Cover Model
+
+All maths lives in `src/sensors/cloud_model.cpp` (no Arduino deps, so `tools/cloud_replay` builds it with desktop g++ — run `--selftest` after changing it).  Per frame, `SkyConditions::update()`:
+
+1. Smooths the ambient used for cloud cover (`AmbientSmoother`, EMA with `alpha = dt/(tau+dt)` from real frame spacing, `tau = cloudAmbTau`; resets on first frame, ambient-source change (env sensor ↔ MLX die), or a jump > `CLOUD_AMB_RESET_C`).  `getAmbientTemperature()` stays raw; `getCloudAmbient()` is the smoothed value.
+2. Computes effective thresholds: `offset = cloudAmbSlope × (ambCloud − cloudAmbRef) [+ cloudDewSlope × (dewPoint − cloudDewRef)]`, added to both `cloudClearDelta` and `cloudOvercastDelta`.  Dew point comes from `dhtData` (NAN without humidity → dew term skipped).  Slopes of 0 = legacy fixed thresholds.
+3. Mean and per-pixel cover from those thresholds; `getDisplayRange()` floating mode uses the same ambient/thresholds.
+4. Pushes both into `CloudCoverWindow` (`CLOUD_AVG_SAMPLES` = 400 frames ≈ 33 min at 5 s) and caches the median over `AveragePeriod` hours (newest frame always included; longer periods use the whole ring).
+
+`getCloudCover()` = reported median (Alpaca `CloudCover`, Switch device, MQTT `cloud_cover`); `getCloudCoverInstant()` = latest frame (Sky History clear-sky accumulation); `getCloudCoverMean()/Pixel()` = latest per-method values (trends, home page).
 
 ### Thread Safety
 
@@ -117,7 +130,7 @@ The `_frame[768]` array in `SkyConditions` is only written from `readSensor()` a
 | 12–15 | float32 – sky temperature (center 50% FOV average) |
 | 16–783 | uint8 × 768 – palette index: 0–254 = position on the heatmap display range, 255 = "hot" (only with `heatmapHotMarker`; see below) |
 
-**Heatmap display range** (`SkyConditions::getDisplayRange()`, shared by the WebSocket frame and `/thermal.jpg`): in floating mode (default) palette 0 = ambient − `cloudClearDelta` and 1 = ambient − `cloudOvercastDelta`; in fixed mode it spans `heatmapFixedMin`..`heatmapFixedMax`. Display only — cloud-cover calculations never use it.
+**Heatmap display range** (`SkyConditions::getDisplayRange()`, shared by the WebSocket frame and `/thermal.jpg`): in floating mode (default) palette 0 = cloud ambient − effective clear threshold and 1 = cloud ambient − effective overcast threshold (see *Cloud Cover Model*); in fixed mode it spans `heatmapFixedMin`..`heatmapFixedMax`. Display only — cloud-cover calculations never use it.
 
 **Heatmap palette** (`heatmapColor()` in `sky_sensor.cpp` is the single source of truth): floating mode uses the ClearDarkSky blue→white palette across the range; fixed mode uses blue→white from `heatmapFixedMin` up to `HEATMAP_WARM_START_C` (0 °C), then a white→yellow→orange→red warm tail up to `heatmapFixedMax`; values beyond either end clamp to the end colour. An optional hot-pixel marker (`heatmapHotMarker`, Setup → Imaging, **off by default**) uses index 255 (magenta) for pixels above `heatmapFixedMax` in fixed mode or ambient + `HEATMAP_HOT_MARGIN_C` (20 °C) in floating mode, and adds a magenta cap to the colour bar. The home page receives the 256-entry lookup table generated by `heatmapColor()`, so the live view and `/thermal.jpg` always match; the vertical colour bar beside the live view shows the scale.
 
@@ -171,7 +184,7 @@ All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (
 | `heatmapFixedMax` | `heatMax` | +60.0 °C |
 | `heatmapHotMarker` | `heatHot` | false |
 | `tsl2591Integration` | `tslInteg` | 2 (300 ms) |
-| `averagePeriod` | `avgPeriod` | 0.5 s |
+| `averagePeriod` | `avgPeriodH` | 0.0 h (latest frame). Old `avgPeriod` key (seconds, never applied) is ignored |
 | `location` | `location` | "Observatory" |
 | `ntpServer` | `ntpServer` | "" (use pool.ntp.org / time.nist.gov) |
 | `mqttEnabled` | `mqttEn` | false |
@@ -183,12 +196,21 @@ All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (
 | `cloudCoverMethod` | `cloudMethod` | 0 (mean) |
 | `cloudPixelRegion` | `cloudPxRgn` | 0 (center FOV) |
 | `cloudEdgeExclude` | `cloudEdge` | 2 px |
+| `cloudAmbSlope` | `cldAmbSlope` | 0.0 (clamped −2 … 2) |
+| `cloudAmbRef` | `cldAmbRef` | 0.0 °C |
+| `cloudDewSlope` | `cldDewSlope` | 0.0 (clamped −2 … 2) |
+| `cloudDewRef` | `cldDewRef` | 0.0 °C |
+| `cloudAmbTau` | `cldAmbTau` | 0 s (off; max `CLOUD_AMB_TAU_MAX_S` = 1800) |
 | `rainMode` | `rainMode` | 0 (relay) |
 | `rainEnabled` | `rainEn` | true |
 | `dhtType` | `dhtType` | 0 (disabled); 1=DHT11, 2=DHT22, 3=BMP180, 4=BMP280, 5=BME280 |
 | `bmp280Addr` | `bmp280Addr` | 0x76 |
 | `nightLuxThreshold` | `nightLux` | 1.0 lux |
 | `clearCloudThreshold` | `clearCloud` | 20.0 % |
+
+### `/save_config` checkboxes
+
+The Setup form posts a hidden `form=full` field.  Only then does a missing checkbox (`heatHot`, `mqttEnabled`, `rainEnabled`, `safetyBcastEnabled`) mean "off"; a script posting a subset of fields leaves unmentioned checkboxes unchanged (`readCheckbox()` in `web_ui_handler.cpp`).
 
 ### NTP
 
@@ -205,12 +227,15 @@ Implemented in `mqtt_handler.h/.cpp` using the bundled PubSubClient library.
   "sky_temp": -12.5,    "ambient_temp": 18.2,
   "frame_min": -18.0,   "frame_max": 25.0,   "frame_median": 4.3,
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
+  "cloud_clear_eff": 27.7, "cloud_overcast_eff": 17.7, "amb_cloud": 18.1,
   "lux": 0.0023,        "sqm": 21.5,
   "humidity": 62.4,     "pressure": 889.0,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.6.5"
+  "ip": "192.168.x.x",  "version": "0.7.0"
 }
 ```
+
+`cloud_cover` is the `AveragePeriod` median of the selected method; `cloud_cover_mean` / `cloud_cover_pixel` are the latest frame.  `cloud_clear_eff` / `cloud_overcast_eff` are the ambient-compensated thresholds and `amb_cloud` the (optionally smoothed) ambient they were computed from.
 
 `humidity` / `pressure` are present only when the configured ambient sensor provides them (`envHasHumidity()` / `envHasPressure()` in `dht_sensor.h`, shared with Alpaca and the Web UI) **and** it has had a first valid read.
 

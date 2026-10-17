@@ -2,7 +2,7 @@
 
 ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 infrared thermal camera and TSL2591 sky brightness sensor.  Provides a fully standards-compliant Alpaca API for sky temperature, cloud cover, sky brightness, and sky quality monitoring — plus a live thermal viewer and trend charts in the browser.
 
-**Current version: 0.6.5**
+**Current version: 0.7.0**
 
 ---
 
@@ -268,9 +268,10 @@ Enable in Setup → MQTT.  The device publishes to `<prefix>/state` every 30 sec
   "sky_temp": -12.5,    "ambient_temp": 18.2,
   "frame_min": -18.0,   "frame_max": 25.0,   "frame_median": 4.3,
   "cloud_cover": 35.0,  "cloud_cover_mean": 35.0, "cloud_cover_pixel": 32.1,
+  "cloud_clear_eff": 27.7, "cloud_overcast_eff": 17.7, "amb_cloud": 18.1,
   "lux": 0.0023,        "sqm": 21.5,
   "has_data": true,     "has_brightness": true,
-  "ip": "192.168.x.x",  "version": "0.6.5"
+  "ip": "192.168.x.x",  "version": "0.7.0"
 }
 ```
 
@@ -292,6 +293,22 @@ Region options (Setup page): *Centre FOV* (192 pixels) or *Full Frame* with a co
 
 The **Cloud Cover Method** toggle on the Setup page selects which value is reported to ASCOM Alpaca.  Both are always shown on the home page and in trend charts.  The red bounding box in the live thermal view tracks the per-pixel region.
 
+**Ambient compensation (optional).**  A clear sky's ambient−sky delta grows with ambient temperature (≈ 0.6 °C per °C at the reference site), so fixed thresholds that suit a cold night report a warm overcast afternoon as clear.  Both thresholds can shift together:
+
+```
+offset   = Ambient Slope × (ambient − Ambient Ref) [+ Dew-Point Slope × (dew point − Dew-Point Ref)]
+clear    = Cloud Clear Delta    + offset
+overcast = Cloud Overcast Delta + offset
+```
+
+Slopes default to 0 (fixed thresholds).  The dew-point term needs a humidity sensor (DHT11/22, BME280).  The home page shows the effective thresholds; MQTT publishes them as `cloud_clear_eff` / `cloud_overcast_eff`.
+
+**Ambient smoothing (optional).**  *Cloud Ambient Smoothing* applies an exponential average (time constant in seconds, 0 = off) to the ambient used for cloud cover only, so a brief gust or ground-level dip doesn't swing the reading.  It resets when ambient jumps by more than 3 °C or the ambient source changes.  Keep it short (60–180 s) where fronts or chinooks move ambient quickly.
+
+**Averaging.**  Alpaca `CloudCover` (and the cloud-cover Switch) and MQTT `cloud_cover` report the median of per-frame cloud cover over the ASCOM **AveragePeriod**, which is in **hours**; 0 = latest frame.  The buffer holds 400 frames (≈ 33 min at the 5 s frame interval); longer periods use all of it.
+
+**Testing changes on the desktop.**  `tools/cloud_replay` compiles the firmware's cloud maths (`src/sensors/cloud_model.cpp`) with g++ and replays CloudRoll recordings, scoring dark minutes against allsky star counts.  See the comment at the top of `cloud_replay.cpp`.
+
 ---
 
 ## Configuration (Setup Page)
@@ -302,6 +319,9 @@ The **Cloud Cover Method** toggle on the Setup page selects which value is repor
 | SQM Reference | 108000 lux | Lux level that maps to SQM 0.0 |
 | Cloud Clear Delta | 20 °C | Ambient−sky delta at which sky is 0% cloud |
 | Cloud Overcast Delta | 5 °C | Ambient−sky delta at which sky is 100% cloud |
+| Cloud Ambient Slope / Ref | 0 / 0 °C | Shift both thresholds by slope × (ambient − ref); 0 = fixed thresholds |
+| Cloud Dew-Point Slope / Ref | 0 / 0 °C | Optional extra shift by slope × (dew point − ref); needs humidity |
+| Cloud Ambient Smoothing | 0 s | EMA time constant on the cloud-cover ambient (0 = off) |
 | Night Lux Threshold | 1.0 lux | Below this = "night" for Sky History SQM/clear-sky-night tracking |
 | Clear-Sky Cloud Threshold | 20% | Below this cloud cover = "clear" for Sky History tracking |
 | Cloud Cover Method | Mean | Selects mean or per-pixel value for Alpaca |
@@ -312,7 +332,7 @@ The **Cloud Cover Method** toggle on the Setup page selects which value is repor
 | Snapshot Interval | 30 s | Thermal JPEG refresh period |
 | JPEG Quality | 80 | JPEG encoding quality (1–100) |
 | TSL2591 Integration | 300 ms | Integration time for the brightness sensor |
-| Average Period | 0.5 s | ASCOM ObservingConditions AveragePeriod |
+| Average Period | 0 h | ASCOM ObservingConditions AveragePeriod (hours); median window for reported cloud cover |
 | Location | Observatory | Shown in Alpaca management API |
 | NTP Server | *(blank)* | Preferred NTP server (blank = pool.ntp.org) |
 | MQTT Enabled | false | Enable MQTT publishing |
@@ -348,12 +368,14 @@ SkyConditions_90640/
 ├── config.h                      Compile-time constants (pins, ports, frame geometry, version)
 ├── config_store.h/.cpp           NVS persistent config load/save
 ├── tools/
-│   └── udp_monitor.py            Python listener for UDP safety broadcasts (testing)
+│   ├── udp_monitor.py            Python listener for UDP safety broadcasts (testing)
+│   └── cloud_replay/             Desktop replay of cloud-cover maths against CloudRoll data
 └── src/
     ├── debug/                    Conditional serial debug wrapper
     ├── alpaca/                   ASCOM Alpaca HTTP server (port 11111) + UDP discovery
     ├── sensors/
     │   ├── sky_sensor            SkyConditions class — MLX90640, dual cloud cover, colormap
+    │   ├── cloud_model           Pure cloud-cover maths (thresholds, smoothing, median window)
     │   ├── dht_sensor            Optional ambient sensor: DHT11/22, BMP180, BMP280, BME280
     │   ├── rain_sensor           Two-pin relay + RS485 Modbus rain/snow detection
     │   ├── history               Dual-resolution history ring buffers (30 s / 15 min)

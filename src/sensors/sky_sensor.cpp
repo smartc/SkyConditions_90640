@@ -23,78 +23,69 @@ SkyConditions::SkyConditions()
     _lastBrightnessMillis(0),
     _cloudCover(50.0f),
     _cloudCoverPixel(50.0f),
-    _averagePeriod(0.5),
+    _cloudCoverAvg(50.0f),
+    _cloudCoverPixelAvg(50.0f),
+    _cloudAvgSamples(0),
+    _cloudAmbient(0.0f),
+    _ambientFromEnv(false),
+    _averagePeriod(0.0),
     _connected(true),
     _refreshRequested(false)
 {
   memset(_frame, 0, sizeof(_frame));
+  _cloudThresholds.clear    = 0.0f;
+  _cloudThresholds.overcast = 0.0f;
 }
 
 // ---------------------------------------------------------------------------
 // Main-loop interface
 // ---------------------------------------------------------------------------
 
-void SkyConditions::update(float *frame, float ambientTemp)
+void SkyConditions::update(float *frame, float ambientTemp, float dewPoint, bool ambientFromEnv)
 {
+  unsigned long now = millis();
+  float dtSec = _hasData ? (now - _lastUpdateMillis) / 1000.0f : 0.0f;
+
   memcpy(_frame, frame, SENSOR_PIXELS * sizeof(float));
   computeStats();
   _ambientTemperature = ambientTemp;
 
-  // Cloud cover: linear interpolation on (ambient – sky) delta.
-  // delta >= cloudClearDelta    → 0 % (clear)
-  // delta <= cloudOvercastDelta → 100 % (overcast)
-  float span = deviceConfig.cloudClearDelta - deviceConfig.cloudOvercastDelta;
+  // Ambient reference for cloud cover, optionally smoothed; reset when the
+  // source changes (first frame, external sensor dropout or recovery).
+  bool sourceChanged = !_hasData || ambientFromEnv != _ambientFromEnv;
+  _ambientFromEnv = ambientFromEnv;
+  _cloudAmbient = _ambientSmoother.update(ambientTemp, dtSec, (float)deviceConfig.cloudAmbTau,
+                                          CLOUD_AMB_RESET_C, sourceChanged);
+
+  CloudParams p;
+  p.clearDelta    = deviceConfig.cloudClearDelta;
+  p.overcastDelta = deviceConfig.cloudOvercastDelta;
+  p.ambSlope      = deviceConfig.cloudAmbSlope;
+  p.ambRef        = deviceConfig.cloudAmbRef;
+  p.dewSlope      = deviceConfig.cloudDewSlope;
+  p.dewRef        = deviceConfig.cloudDewRef;
+  _cloudThresholds = cloudEffectiveThresholds(p, _cloudAmbient, dewPoint);
 
   // Method 1: mean — single delta from center-FOV average temperature.
-  if (span > 0.01f) {
-    float delta = ambientTemp - _skyTemperature;
-    float t = (delta - deviceConfig.cloudOvercastDelta) / span;
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
-    _cloudCover = (1.0f - t) * 100.0f;
-  } else {
-    _cloudCover = 50.0f;
-  }
+  _cloudCover = cloudCoverFromDelta(_cloudAmbient - _skyTemperature, _cloudThresholds);
 
-  // Method 2: per-pixel — apply the same interpolation to each pixel in the
-  // selected region independently, then average.
-  if (span > 0.01f) {
-    int rowStart, rowEnd, colStart, colEnd;
-    if (deviceConfig.cloudPixelRegion == 1) {
-      // Full frame minus configurable edge border.
-      int edge = (int)deviceConfig.cloudEdgeExclude;
-      rowStart = edge;
-      rowEnd   = SENSOR_ROWS - 1 - edge;
-      colStart = edge;
-      colEnd   = SENSOR_COLS - 1 - edge;
-      // Guard against degenerate config (edge too large).
-      if (rowStart > rowEnd || colStart > colEnd) {
-        rowStart = CENTER_ROW_START; rowEnd = CENTER_ROW_END;
-        colStart = CENTER_COL_START; colEnd = CENTER_COL_END;
-      }
-    } else {
-      rowStart = CENTER_ROW_START; rowEnd = CENTER_ROW_END;
-      colStart = CENTER_COL_START; colEnd = CENTER_COL_END;
-    }
-    int pixCount = (rowEnd - rowStart + 1) * (colEnd - colStart + 1);
+  // Method 2: per-pixel — the same interpolation on each pixel of the
+  // selected region independently, then averaged.
+  _cloudCoverPixel = cloudCoverPixel(_frame, _cloudAmbient, _cloudThresholds,
+    cloudPixelRegion(deviceConfig.cloudPixelRegion, deviceConfig.cloudEdgeExclude));
 
-    float cloudSum = 0.0f;
-    for (int row = rowStart; row <= rowEnd; row++) {
-      for (int col = colStart; col <= colEnd; col++) {
-        float delta = ambientTemp - _frame[row * SENSOR_COLS + col];
-        float t = (delta - deviceConfig.cloudOvercastDelta) / span;
-        if (t < 0.0f) t = 0.0f;
-        if (t > 1.0f) t = 1.0f;
-        cloudSum += (1.0f - t);
-      }
-    }
-    _cloudCoverPixel = (cloudSum / pixCount) * 100.0f;
-  } else {
-    _cloudCoverPixel = 50.0f;
-  }
-
-  _lastUpdateMillis = millis();
+  _cloudWindow.push(now, _cloudCover, _cloudCoverPixel);
+  _lastUpdateMillis = now;
   _hasData          = true;
+  updateCloudAverage();
+}
+
+void SkyConditions::updateCloudAverage()
+{
+  // AveragePeriod is in hours (ASCOM); clamp before converting to ms.
+  double   hours    = _averagePeriod < 1000.0 ? _averagePeriod : 1000.0;
+  uint32_t windowMs = (uint32_t)(hours * 3600000.0);
+  _cloudWindow.median(millis(), windowMs, _cloudCoverAvg, _cloudCoverPixelAvg, _cloudAvgSamples);
 }
 
 void SkyConditions::computeStats()
@@ -195,8 +186,10 @@ void SkyConditions::getDisplayRange(float &coldEnd, float &range, float &hotAbov
     // than spanning the full range to white.
     //   coldEnd = temperature a "clearly clear" sky would have (ambient - clearDelta)
     //   warmEnd = temperature an "overcast" sky would have   (ambient - overcastDelta)
-    coldEnd  = _ambientTemperature - deviceConfig.cloudClearDelta;
-    range    = deviceConfig.cloudClearDelta - deviceConfig.cloudOvercastDelta;
+    // Uses the same (smoothed) ambient and effective thresholds as cloud
+    // cover, so the view tracks the reported value.
+    coldEnd  = _cloudAmbient - _cloudThresholds.clear;
+    range    = _cloudThresholds.clear - _cloudThresholds.overcast;
     if (range < 1.0f) range = 1.0f;
     // The top of the floating scale sits below ambient, so flag only pixels
     // well above ambient (e.g. the sun) rather than the warm frame edges.
@@ -272,6 +265,11 @@ void SkyConditions::updateBrightness(float lux)
 
 float SkyConditions::getCloudCover() const
 {
+  return (deviceConfig.cloudCoverMethod == 1) ? _cloudCoverPixelAvg : _cloudCoverAvg;
+}
+
+float SkyConditions::getCloudCoverInstant() const
+{
   return (deviceConfig.cloudCoverMethod == 1) ? _cloudCoverPixel : _cloudCover;
 }
 
@@ -279,6 +277,7 @@ bool SkyConditions::setAveragePeriod(double v)
 {
   if (v < 0.0) return false;
   _averagePeriod = v;
+  updateCloudAverage();
   return true;
 }
 

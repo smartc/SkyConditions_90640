@@ -240,8 +240,19 @@ static void handleSkyHistoryJSON()
   skyHistoryStreamJSON(webUiServer, days);
 }
 
+// Unticked checkboxes are absent from a form POST, so a missing one only
+// means "off" when the full Setup form was submitted (its hidden form=full
+// field).  A script posting a few fields leaves the other checkboxes alone.
+static void readCheckbox(const char *name, bool &field, bool fullForm)
+{
+  if (webUiServer.hasArg(name)) field = webUiServer.arg(name) != "0";
+  else if (fullForm)            field = false;
+}
+
 static void handleSaveConfig()
 {
+  bool fullForm = webUiServer.arg("form") == "full";
+
   if (webUiServer.hasArg("sqmOffset"))
     deviceConfig.sqmOffset = webUiServer.arg("sqmOffset").toFloat();
   if (webUiServer.hasArg("sqmRef"))
@@ -250,6 +261,16 @@ static void handleSaveConfig()
     deviceConfig.cloudClearDelta = webUiServer.arg("cloudClear").toFloat();
   if (webUiServer.hasArg("cloudOvercast"))
     deviceConfig.cloudOvercastDelta = webUiServer.arg("cloudOvercast").toFloat();
+  if (webUiServer.hasArg("cldAmbSlope"))
+    deviceConfig.cloudAmbSlope = constrain(webUiServer.arg("cldAmbSlope").toFloat(), -2.0f, 2.0f);
+  if (webUiServer.hasArg("cldAmbRef"))
+    deviceConfig.cloudAmbRef = constrain(webUiServer.arg("cldAmbRef").toFloat(), -50.0f, 50.0f);
+  if (webUiServer.hasArg("cldDewSlope"))
+    deviceConfig.cloudDewSlope = constrain(webUiServer.arg("cldDewSlope").toFloat(), -2.0f, 2.0f);
+  if (webUiServer.hasArg("cldDewRef"))
+    deviceConfig.cloudDewRef = constrain(webUiServer.arg("cldDewRef").toFloat(), -50.0f, 50.0f);
+  if (webUiServer.hasArg("cldAmbTau"))
+    deviceConfig.cloudAmbTau = (uint16_t)constrain(webUiServer.arg("cldAmbTau").toInt(), 0, CLOUD_AMB_TAU_MAX_S);
   if (webUiServer.hasArg("snapSec"))
     deviceConfig.snapshotIntervalSec = (uint16_t)webUiServer.arg("snapSec").toInt();
   if (webUiServer.hasArg("jpegQuality"))
@@ -264,11 +285,13 @@ static void handleSaveConfig()
       deviceConfig.heatmapFixedMax = hi;
     }
   }
-  deviceConfig.heatmapHotMarker = webUiServer.hasArg("heatHot");
+  readCheckbox("heatHot", deviceConfig.heatmapHotMarker, fullForm);
   if (webUiServer.hasArg("tslInteg"))
     deviceConfig.tsl2591Integration = (uint8_t)constrain(webUiServer.arg("tslInteg").toInt(), 0, 5);
-  if (webUiServer.hasArg("avgPeriod"))
-    deviceConfig.averagePeriod = webUiServer.arg("avgPeriod").toDouble();
+  if (webUiServer.hasArg("avgPeriod")) {
+    double v = webUiServer.arg("avgPeriod").toDouble();
+    if (skyConditions.setAveragePeriod(v)) deviceConfig.averagePeriod = v;
+  }
   if (webUiServer.hasArg("location")) {
     String loc = webUiServer.arg("location");
     strncpy(deviceConfig.location, loc.c_str(), sizeof(deviceConfig.location) - 1);
@@ -292,7 +315,7 @@ static void handleSaveConfig()
     deviceConfig.clearCloudThreshold = constrain(webUiServer.arg("clearCloud").toFloat(), 0.0f, 100.0f);
 
   // MQTT
-  deviceConfig.mqttEnabled = webUiServer.hasArg("mqttEnabled");
+  readCheckbox("mqttEnabled", deviceConfig.mqttEnabled, fullForm);
   if (webUiServer.hasArg("mqttServer")) {
     String s = webUiServer.arg("mqttServer"); s.trim();
     strncpy(deviceConfig.mqttServer, s.c_str(), sizeof(deviceConfig.mqttServer) - 1);
@@ -319,10 +342,10 @@ static void handleSaveConfig()
   }
 
   // Rain sensor
-  deviceConfig.rainEnabled = webUiServer.hasArg("rainEnabled");
+  readCheckbox("rainEnabled", deviceConfig.rainEnabled, fullForm);
 
   // Safety sensor UDP broadcast
-  deviceConfig.safetyBcastEnabled = webUiServer.hasArg("safetyBcastEnabled");
+  readCheckbox("safetyBcastEnabled", deviceConfig.safetyBcastEnabled, fullForm);
   if (webUiServer.hasArg("safetyBcastPort")) {
     uint16_t p = (uint16_t)constrain(webUiServer.arg("safetyBcastPort").toInt(), 1024, 65535);
     deviceConfig.safetyBcastPort = p;
@@ -484,14 +507,21 @@ void broadcastSensorState()
   if (wsServer.connectedClients() == 0) return;
   if (!skyConditions.hasData()) return;
 
-  char buf[256];
+  char buf[384];
   int len = snprintf(buf, sizeof(buf),
     "{\"amb\":%.1f,\"cloud_mean\":%.1f,\"cloud_px\":%.1f"
+    ",\"cloud\":%.1f,\"cloud_n\":%d"
+    ",\"amb_cloud\":%.2f,\"clr_eff\":%.2f,\"ovc_eff\":%.2f"
     ",\"lux\":%.6f,\"sqm\":%.2f"
     ",\"has_data\":true,\"has_brightness\":%s",
     skyConditions.getAmbientTemperature(),
     skyConditions.getCloudCoverMean(),
     skyConditions.getCloudCoverPixel(),
+    skyConditions.getCloudCover(),
+    skyConditions.getCloudAvgSamples(),
+    skyConditions.getCloudAmbient(),
+    skyConditions.getCloudClearEff(),
+    skyConditions.getCloudOvercastEff(),
     skyConditions.getLux(),
     skyConditions.getSqm(),
     skyConditions.hasBrightnessData() ? "true" : "false");
