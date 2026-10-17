@@ -356,11 +356,13 @@ void readSensor()
 
   // Ambient temperature: prefer DHT when enabled and valid (MLX die temp runs high
   // due to self-heating; an external DHT gives a true ambient reference).
-  float ambientTemp = (deviceConfig.dhtType != 0 && dhtData.valid)
-                      ? dhtData.temperature
-                      : mlx.getTa(false);
+  bool  ambientFromEnv = (deviceConfig.dhtType != 0 && dhtData.valid);
+  float ambientTemp    = ambientFromEnv ? dhtData.temperature : mlx.getTa(false);
+  float dewPoint       = (ambientFromEnv && envHasHumidity())
+                         ? cloudDewPointC(dhtData.temperature, dhtData.humidity)
+                         : NAN;
 
-  skyConditions.update(thermalFrame, ambientTemp);
+  skyConditions.update(thermalFrame, ambientTemp, dewPoint, ambientFromEnv);
 
   historyAccumulateThermal(
     skyConditions.getSkyTemperature(),
@@ -372,19 +374,24 @@ void readSensor()
     skyConditions.getCloudCoverPixel());
 
   if (skyConditions.hasBrightnessData())
-    skyHistoryAccumulateCloud(skyConditions.getCloudCover(), skyConditions.getLux());
+    skyHistoryAccumulateCloud(skyConditions.getCloudCoverInstant(), skyConditions.getLux());
 
   broadcastThermalFrame();
   broadcastSensorState();
 
   lastSensorRead = millis();
 
-  Debug.printf("Sky: %.2f C  Min: %.2f C  Max: %.2f C  Median: %.2f C  Amb: %.2f C\n",
+  Debug.printf("Sky: %.2f C  Min: %.2f C  Max: %.2f C  Median: %.2f C  Amb: %.2f C"
+               "  Cloud: %.1f%% (thr %.1f/%.1f @ %.2f C)\n",
     skyConditions.getSkyTemperature(),
     skyConditions.getMinTemperature(),
     skyConditions.getMaxTemperature(),
     skyConditions.getMedianTemperature(),
-    skyConditions.getAmbientTemperature());
+    skyConditions.getAmbientTemperature(),
+    skyConditions.getCloudCover(),
+    skyConditions.getCloudClearEff(),
+    skyConditions.getCloudOvercastEff(),
+    skyConditions.getCloudAmbient());
 }
 
 // ---------------------------------------------------------------------------

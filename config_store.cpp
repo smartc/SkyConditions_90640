@@ -30,7 +30,10 @@ void configLoad(DeviceConfig &cfg)
   cfg.tsl2591Integration  = prefs.getUChar ("tslInteg",    2);
 
   // ASCOM
-  cfg.averagePeriod       = prefs.getDouble("avgPeriod",   0.5);
+  // Hours per ASCOM.  Stored under a new key: the old "avgPeriod" was entered
+  // as seconds but never applied, so it is ignored rather than reinterpreted.
+  cfg.averagePeriod       = prefs.getDouble("avgPeriodH",  0.0);
+  if (!(cfg.averagePeriod >= 0.0)) cfg.averagePeriod = 0.0;
 
   // Identity
   String loc = prefs.getString("location", LOCATION);
@@ -62,6 +65,11 @@ void configLoad(DeviceConfig &cfg)
   cfg.cloudCoverMethod   = prefs.getUChar("cloudMethod", 0);
   cfg.cloudPixelRegion   = prefs.getUChar("cloudPxRgn",  0);
   cfg.cloudEdgeExclude   = prefs.getUChar("cloudEdge",   2);
+  cfg.cloudAmbSlope      = constrain(prefs.getFloat("cldAmbSlope", 0.0f), -2.0f, 2.0f);
+  cfg.cloudAmbRef        = constrain(prefs.getFloat("cldAmbRef",   0.0f), -50.0f, 50.0f);
+  cfg.cloudDewSlope      = constrain(prefs.getFloat("cldDewSlope", 0.0f), -2.0f, 2.0f);
+  cfg.cloudDewRef        = constrain(prefs.getFloat("cldDewRef",   0.0f), -50.0f, 50.0f);
+  cfg.cloudAmbTau        = min<uint16_t>(prefs.getUShort("cldAmbTau", 0), CLOUD_AMB_TAU_MAX_S);
 
   // Rain sensor
   cfg.rainMode           = prefs.getUChar("rainMode",    0);     // default: Relay
@@ -105,7 +113,7 @@ void configSave(const DeviceConfig &cfg)
   prefs.putFloat ("heatMax",     cfg.heatmapFixedMax);
   prefs.putBool  ("heatHot",     cfg.heatmapHotMarker);
   prefs.putUChar ("tslInteg",    cfg.tsl2591Integration);
-  prefs.putDouble("avgPeriod",   cfg.averagePeriod);
+  prefs.putDouble("avgPeriodH",  cfg.averagePeriod);
   prefs.putString("location",    cfg.location);
   prefs.putString("ntpServer",   cfg.ntpServer);
   prefs.putBool  ("mqttEn",       cfg.mqttEnabled);
@@ -117,6 +125,11 @@ void configSave(const DeviceConfig &cfg)
   prefs.putUChar ("cloudMethod", cfg.cloudCoverMethod);
   prefs.putUChar ("cloudPxRgn",  cfg.cloudPixelRegion);
   prefs.putUChar ("cloudEdge",   cfg.cloudEdgeExclude);
+  prefs.putFloat ("cldAmbSlope", cfg.cloudAmbSlope);
+  prefs.putFloat ("cldAmbRef",   cfg.cloudAmbRef);
+  prefs.putFloat ("cldDewSlope", cfg.cloudDewSlope);
+  prefs.putFloat ("cldDewRef",   cfg.cloudDewRef);
+  prefs.putUShort("cldAmbTau",   cfg.cloudAmbTau);
   prefs.putUChar ("rainMode",    cfg.rainMode);
   prefs.putBool  ("rainEn",      cfg.rainEnabled);
   prefs.putUChar ("dhtType",     cfg.dhtType);

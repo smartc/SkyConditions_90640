@@ -311,6 +311,9 @@ void publishStatusToMQTT()
   doc["cloud_cover"]       = round(skyConditions.getCloudCover()        *  10.0f) /  10.0f;
   doc["cloud_cover_mean"]  = round(skyConditions.getCloudCoverMean()    *  10.0f) /  10.0f;
   doc["cloud_cover_pixel"] = round(skyConditions.getCloudCoverPixel()   *  10.0f) /  10.0f;
+  doc["cloud_clear_eff"]   = round(skyConditions.getCloudClearEff()     *  10.0f) /  10.0f;
+  doc["cloud_overcast_eff"]= round(skyConditions.getCloudOvercastEff()  *  10.0f) /  10.0f;
+  doc["amb_cloud"]         = round(skyConditions.getCloudAmbient()      * 100.0f) / 100.0f;
   doc["lux"]               = skyConditions.getLux();
   doc["sqm"]               = round(skyConditions.getSqm()               * 100.0f) / 100.0f;
   // Omitted until the ambient sensor has a first valid read, so HA never

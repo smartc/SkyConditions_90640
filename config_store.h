@@ -27,7 +27,7 @@ struct DeviceConfig {
   uint8_t  tsl2591Integration;   // TSL2591 integration time enum (0=100ms … 5=600ms)
 
   // ASCOM
-  double   averagePeriod;        // ObservingConditions AveragePeriod (seconds)
+  double   averagePeriod;        // ObservingConditions AveragePeriod (hours); cloud-cover median window
 
   // Identity
   char     location[32];         // Location string in Alpaca management API
@@ -47,6 +47,14 @@ struct DeviceConfig {
   uint8_t  cloudCoverMethod;     // 0 = mean (center FOV avg), 1 = per-pixel
   uint8_t  cloudPixelRegion;     // 0 = center FOV, 1 = full frame (per-pixel only)
   uint8_t  cloudEdgeExclude;     // pixels to ignore on each edge when using full frame
+  // Ambient/dew-point compensation: both thresholds shift by
+  // cloudAmbSlope × (ambient − cloudAmbRef) + cloudDewSlope × (dewPoint − cloudDewRef).
+  // Slopes of 0 (default) leave cloudClearDelta / cloudOvercastDelta unchanged.
+  float    cloudAmbSlope;        // −2 … 2
+  float    cloudAmbRef;          // °C
+  float    cloudDewSlope;        // −2 … 2; needs a humidity sensor (dhtType 1, 2, 5)
+  float    cloudDewRef;          // °C
+  uint16_t cloudAmbTau;          // s, EMA time constant on the cloud-cover ambient (0 = off)
 
   // Rain sensor
   uint8_t  rainMode;             // 0 = Relay (IO38), 1 = RS485 Modbus
