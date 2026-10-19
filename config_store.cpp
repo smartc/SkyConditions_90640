@@ -1,4 +1,5 @@
 #include "config_store.h"
+#include "src/time/ntp_sync.h"
 
 DeviceConfig deviceConfig;
 
@@ -41,9 +42,15 @@ void configLoad(DeviceConfig &cfg)
   cfg.location[sizeof(cfg.location) - 1] = '\0';
 
   // Network
-  String ntp = prefs.getString("ntpServer", "");
-  strncpy(cfg.ntpServer, ntp.c_str(), sizeof(cfg.ntpServer) - 1);
-  cfg.ntpServer[sizeof(cfg.ntpServer) - 1] = '\0';
+  cfg.ntpEnabled = prefs.getBool("ntpEn", true);
+  const char *ntpKeys[3] = {"ntpServer", "ntpServer2", "ntpServer3"};
+  char *ntpDst[3] = {cfg.ntpServer, cfg.ntpServer2, cfg.ntpServer3};
+  for (int i = 0; i < 3; i++) {
+    String ntp = prefs.getString(ntpKeys[i], i == 0 ? NTP_DEFAULT_SERVER : "");
+    strncpy(ntpDst[i], ntp.c_str(), sizeof(cfg.ntpServer) - 1);
+    ntpDst[i][sizeof(cfg.ntpServer) - 1] = '\0';
+  }
+  cfg.utcOffsetMin = (int16_t)constrain((int)prefs.getShort("utcOffMin", 0), -720, 840);
 
   // MQTT
   cfg.mqttEnabled = prefs.getBool  ("mqttEn",       false);
@@ -115,7 +122,11 @@ void configSave(const DeviceConfig &cfg)
   prefs.putUChar ("tslInteg",    cfg.tsl2591Integration);
   prefs.putDouble("avgPeriodH",  cfg.averagePeriod);
   prefs.putString("location",    cfg.location);
+  prefs.putBool  ("ntpEn",       cfg.ntpEnabled);
   prefs.putString("ntpServer",   cfg.ntpServer);
+  prefs.putString("ntpServer2",  cfg.ntpServer2);
+  prefs.putString("ntpServer3",  cfg.ntpServer3);
+  prefs.putShort ("utcOffMin",   cfg.utcOffsetMin);
   prefs.putBool  ("mqttEn",       cfg.mqttEnabled);
   prefs.putString("mqttServer",   cfg.mqttServer);
   prefs.putUShort("mqttPort",     cfg.mqttPort);

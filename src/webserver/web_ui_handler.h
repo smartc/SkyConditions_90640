@@ -8,10 +8,6 @@
 #include "../debug/debug.h"
 #include "../sensors/sky_sensor.h"
 
-// Forward declarations for HTML template functions
-String getHomePage();
-String getSetupPage();
-
 // Shared server instances (used by main sketch for ElegantOTA)
 extern WebServer      webUiServer;
 extern WebSocketsServer wsServer;
@@ -36,5 +32,6 @@ uint8_t getWsClientCount();
 // Used on the Setup page's Hardware card.
 String getScaledBufStatus();
 bool   isScaledBufFailed();
+bool   isScaledBufInPsram();
 
 #endif // WEB_UI_HANDLER_H

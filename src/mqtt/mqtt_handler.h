@@ -16,5 +16,6 @@ void setupMQTT();
 void mqttLoop();
 void publishStatusToMQTT();
 void publishDiscovery();
+bool mqttIsConnected();   // broker connection state, for the Web UI status bar
 
 #endif // MQTT_HANDLER_H

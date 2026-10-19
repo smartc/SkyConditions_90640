@@ -32,6 +32,7 @@
 #include "src/mqtt/mqtt_handler.h"
 #include "src/safety/rain_safety_broadcast.h"
 #include "src/watchdog/watchdog.h"
+#include "src/time/ntp_sync.h"
 
 #include <Wire.h>
 #include <Adafruit_MLX90640.h>
@@ -213,14 +214,8 @@ void setup()
   Debug.printf("Config: sqmOffset=%.2f  cloudClear=%.1f  cloudOvercast=%.1f\n",
     deviceConfig.sqmOffset, deviceConfig.cloudClearDelta, deviceConfig.cloudOvercastDelta);
 
-  // ── NTP sync – system clock; configurable preferred server ───────────────
-  if (strlen(deviceConfig.ntpServer) > 0) {
-    configTime(0, 0, deviceConfig.ntpServer, "pool.ntp.org", "time.nist.gov");
-    Debug.println("NTP sync started (UTC) – preferred: " + String(deviceConfig.ntpServer));
-  } else {
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    Debug.println("NTP sync started (UTC) – using pool.ntp.org / time.nist.gov");
-  }
+  // ── NTP sync – system clock stays UTC; sources from Setup → Network ─────
+  ntpApply();
 
   // ── ASCOM Alpaca server (Arduino WebServer on port 11111) ─────────────────
   setupAlpacaServer();

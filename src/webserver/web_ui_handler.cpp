@@ -14,10 +14,13 @@
 #include "../mqtt/mqtt_handler.h"
 #include "../sensors/rain_sensor.h"
 #include "../sensors/dht_sensor.h"
+#include "../time/ntp_sync.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <img_converters.h>
 #include <esp_heap_caps.h>
+#include <sys/time.h>
+#include <ArduinoJson.h>
 
 WebServer        webUiServer(80);
 WebSocketsServer wsServer(81);
@@ -154,9 +157,48 @@ static void handleRoot()
   webUiServer.send(200, "text/html", getHomePage());
 }
 
+// The Setup page is ~40 KB, so it is streamed one tab at a time rather than
+// built as one String.
 static void handleSetup()
 {
-  webUiServer.send(200, "text/html", getSetupPage());
+  webUiServer.sendHeader("Connection", "close");
+  webUiServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  webUiServer.send(200, "text/html", "");
+  // An empty chunk would end the chunked response early, so skip any.
+  buildSetupPage([](const String& part) { if (part.length()) webUiServer.sendContent(part); },
+                 webUiServer.hasArg("saved"));
+}
+
+static void handleFirmware()
+{
+  webUiServer.send(200, "text/html", getFirmwarePage());
+}
+
+// Shared poll for every page's status bar: bar items, error line, data-live
+// cells, and the device clock for data-clock displays.
+static void handleApiStatus()
+{
+  DynamicJsonDocument doc(3072);
+
+  // Milliseconds since the epoch for the browser clocks; 0 until NTP sync.
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  uint64_t unixMs = clockSynced() ? (uint64_t)tv.tv_sec * 1000ULL + tv.tv_usec / 1000 : 0;
+  doc["unix_ms"]  = unixMs;
+  doc["total_offset"] = deviceConfig.utcOffsetMin;   // minutes, for data-clock='local-*'
+  doc["uptime_s"] = millis() / 1000;
+
+  size_t n;
+  const StatusItem* items = statusItems(n);
+  for (size_t i = 0; i < n; i++) doc["bar"][items[i].key] = items[i].render();
+  items = liveItems(n);
+  for (size_t i = 0; i < n; i++) doc["live"][items[i].key] = items[i].render();
+  doc["err"] = statusErrorText();
+
+  String json;
+  serializeJson(doc, json);
+  webUiServer.sendHeader("Cache-Control", "no-store");
+  webUiServer.send(200, "application/json", json);
 }
 
 static void handleResetWifi()
@@ -297,11 +339,26 @@ static void handleSaveConfig()
     strncpy(deviceConfig.location, loc.c_str(), sizeof(deviceConfig.location) - 1);
     deviceConfig.location[sizeof(deviceConfig.location) - 1] = '\0';
   }
-  if (webUiServer.hasArg("ntpServer")) {
-    String ntp = webUiServer.arg("ntpServer");
-    ntp.trim();
-    strncpy(deviceConfig.ntpServer, ntp.c_str(), sizeof(deviceConfig.ntpServer) - 1);
-    deviceConfig.ntpServer[sizeof(deviceConfig.ntpServer) - 1] = '\0';
+  // NTP: restart SNTP only if its settings changed.
+  bool ntpChanged = false;
+  {
+    bool en = deviceConfig.ntpEnabled;
+    readCheckbox("ntpEnabled", deviceConfig.ntpEnabled, fullForm);
+    ntpChanged = en != deviceConfig.ntpEnabled;
+    const char *args[3] = {"ntpServer", "ntpServer2", "ntpServer3"};
+    char *dst[3] = {deviceConfig.ntpServer, deviceConfig.ntpServer2, deviceConfig.ntpServer3};
+    for (int i = 0; i < 3; i++) {
+      if (!webUiServer.hasArg(args[i])) continue;
+      String ntp = webUiServer.arg(args[i]);
+      ntp.trim();
+      if (ntp != dst[i]) ntpChanged = true;
+      strncpy(dst[i], ntp.c_str(), sizeof(deviceConfig.ntpServer) - 1);
+      dst[i][sizeof(deviceConfig.ntpServer) - 1] = '\0';
+    }
+  }
+  if (webUiServer.hasArg("utcOffset")) {
+    float h = webUiServer.arg("utcOffset").toFloat();   // hours, e.g. -6 or 5.5
+    deviceConfig.utcOffsetMin = (int16_t)constrain((int)lroundf(h * 60.0f), -720, 840);
   }
   if (webUiServer.hasArg("cloudMethod"))
     deviceConfig.cloudCoverMethod = (uint8_t)(webUiServer.arg("cloudMethod").toInt() != 0 ? 1 : 0);
@@ -367,8 +424,14 @@ static void handleSaveConfig()
 
   configSave(deviceConfig);
   Debug.println("Config saved via web UI");
-  webUiServer.sendHeader("Location", "/setup");
-  webUiServer.send(303, "text/plain", "Redirecting...");
+  if (ntpChanged) ntpApply();
+
+  // Post/Redirect/Get: back to the tab the form was saved from.
+  String tab = webUiServer.arg("tab");
+  for (size_t i = 0; i < tab.length(); i++)
+    if (!isalnum((unsigned char)tab[i])) { tab = ""; break; }
+  webUiServer.sendHeader("Location", tab.length() ? "/setup?saved=1#" + tab : String("/setup?saved=1"), true);
+  webUiServer.send(303, "text/plain", "");
 }
 
 static void handleThermalMatrix()
@@ -470,6 +533,8 @@ void initWebUI()
   webUiServer.on("/skyhistory.json", HTTP_GET,  handleSkyHistoryJSON);
   webUiServer.on("/thermal.jpg",    HTTP_GET,  handleThermalJpeg);
   webUiServer.on("/thermalmatrix",  HTTP_GET,  handleThermalMatrix);
+  webUiServer.on("/api/status",   HTTP_GET,  handleApiStatus);
+  webUiServer.on("/firmware",     HTTP_GET,  handleFirmware);
   webUiServer.on("/console",      HTTP_GET,  handleConsole);
   webUiServer.on("/console.json", HTTP_GET,  handleConsoleJSON);
   webUiServer.on("/reset_wifi",   HTTP_POST, handleResetWifi);
@@ -566,11 +631,11 @@ String getScaledBufStatus()
 {
   switch (scaledBufState) {
     case SCALEDBUF_PSRAM:
-      return "OK – PSRAM";
+      return "OK (PSRAM)";
     case SCALEDBUF_INTERNAL:
-      return "OK – internal heap (PSRAM unavailable; not recommended long-term)";
+      return "OK (internal heap; PSRAM unavailable, not recommended long-term)";
     default:
-      return "FAILED – PSRAM not available; enable Tools &gt; PSRAM &gt; OPI PSRAM "
+      return "FAILED: PSRAM not available. Enable Tools &gt; PSRAM &gt; OPI PSRAM "
              "in Arduino IDE and reflash";
   }
 }
@@ -578,4 +643,9 @@ String getScaledBufStatus()
 bool isScaledBufFailed()
 {
   return scaledBufState == SCALEDBUF_FAILED;
+}
+
+bool isScaledBufInPsram()
+{
+  return scaledBufState == SCALEDBUF_PSRAM;
 }
