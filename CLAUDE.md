@@ -50,12 +50,13 @@ The ASCOM Alpaca protocol is implemented directly using the Arduino `WebServer` 
 | `tools/cloud_replay/` | Desktop g++ harness for `cloud_model.cpp`: `--selftest` unit checks + replay of CloudRoll CSV / calibration data |
 | `alpaca.h/.cpp` | ASCOM Alpaca HTTP server (port 11111) + UDP discovery FreeRTOS task |
 | `web_ui_handler.h/.cpp` | Arduino `WebServer` (port 80) + `WebSocketsServer` (port 81) |
-| `html_templates.h` | Inline HTML/CSS/JS generators for home, trends, and setup pages |
+| `html_templates.h` | Inline HTML/CSS/JS generators for all pages, shared stylesheet, status bar (see `WEB_UI_STYLE_GUIDE.md`) |
 | `history.h/.cpp` | Dual-resolution history ring buffers (30 s / 15 min buckets) |
 | `sky_history.h/.cpp` | Persistent 90-day hourly rain/SQM/clear-sky history (NVS-backed), backs the Sky History calendar page |
 | `mqtt_handler.h/.cpp` | MQTT client + Home Assistant autodiscovery (PubSubClient) |
 | `dht_sensor.h/.cpp` | Optional ambient sensor: DHT11/22, BMP180, BMP280, BME280 |
 | `rain_sensor.h/.cpp` | Two-pin relay rain/snow detection |
+| `ntp_sync.h/.cpp` | SNTP start/stop from `DeviceConfig` (`ntpApply()`), last-sync time |
 | `PubSubClient.h/.cpp` | Bundled MQTT client library (copied from ror_controller) |
 
 ### Communication Stack
@@ -169,7 +170,7 @@ Each bucket stores avg/lo/hi for 8 metrics: sky temp, frame min/max, median, amb
 
 ### Persistent Configuration (`DeviceConfig`)
 
-All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (keys ≤ 15 chars).  Loaded in `setup()` before `configTime()` and the Alpaca server start so that `ntpServer` is available for the NTP call.
+All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (keys ≤ 15 chars).  Loaded in `setup()` before `ntpApply()` and the Alpaca server start so the NTP sources are available.
 
 | Field | NVS key | Default |
 |-------|---------|---------|
@@ -186,7 +187,9 @@ All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (
 | `tsl2591Integration` | `tslInteg` | 2 (300 ms) |
 | `averagePeriod` | `avgPeriodH` | 0.0 h (latest frame). Old `avgPeriod` key (seconds, never applied) is ignored |
 | `location` | `location` | "Observatory" |
-| `ntpServer` | `ntpServer` | "" (use pool.ntp.org / time.nist.gov) |
+| `ntpEnabled` | `ntpEn` | true |
+| `ntpServer` / `ntpServer2` / `ntpServer3` | `ntpServer` / `ntpServer2` / `ntpServer3` | "time.google.com" / "" / "" (all blank → time.google.com) |
+| `utcOffsetMin` | `utcOffMin` | 0 min (Web UI display only; −720 … 840) |
 | `mqttEnabled` | `mqttEn` | false |
 | `mqttServer` | `mqttServer` | "" |
 | `mqttPort` | `mqttPort` | 1883 |
@@ -208,13 +211,23 @@ All runtime-tunable settings are stored in NVS under the `"skyCond"` namespace (
 | `nightLuxThreshold` | `nightLux` | 1.0 lux |
 | `clearCloudThreshold` | `clearCloud` | 20.0 % |
 
+### Web UI conventions
+
+Follows `WEB_UI_STYLE_GUIDE.md` (shared with ror_controller):
+- Every page is `getPageHeader()` → `getPageTitle()` (h1 + version line) → `getNavBar()` (nav links + live status bar) → cards. All CSS is in `getCommonStyles()`; template strings are ASCII-only (HTML entities, `\uXXXX` in JS).
+- The status bar polls `GET /api/status` every 2 s. It is the page's only poll: it fills the bar items (`statusItems()`), the red error line (`statusErrorText()`), every `data-live='<key>'` cell (`liveItems()`, the same helpers render the cell at page load) and ticks every `data-clock='utc-time|utc-date|local-time|local-date'` element from the device's `unix_ms` (0 until NTP sync).
+- `/setup` is tabbed and streamed tab by tab (`buildSetupPage(emit, saved)`). The Cloud Cover … Network tabs are one `<form>`, so any Save Settings button saves all of them. WiFi and Device tabs sit outside it.
+- `/firmware` frames ElegantOTA's `/update` in dark mode; the nav's **Update** link points there.
+
 ### `/save_config` checkboxes
 
-The Setup form posts a hidden `form=full` field.  Only then does a missing checkbox (`heatHot`, `mqttEnabled`, `rainEnabled`, `safetyBcastEnabled`) mean "off"; a script posting a subset of fields leaves unmentioned checkboxes unchanged (`readCheckbox()` in `web_ui_handler.cpp`).
+The Setup form posts a hidden `form=full` field.  Only then does a missing checkbox (`heatHot`, `mqttEnabled`, `rainEnabled`, `safetyBcastEnabled`, `ntpEnabled`) mean "off"; a script posting a subset of fields leaves unmentioned checkboxes unchanged (`readCheckbox()` in `web_ui_handler.cpp`).  After saving, the handler 303-redirects to `/setup?saved=1#<tab>` (hidden `tab` field) so the same tab reopens with a "Settings saved" banner.
 
 ### NTP
 
-`configTime(0, 0, ...)` is called after WiFi connects.  If `deviceConfig.ntpServer` is non-empty it is used as the preferred server (first argument); `pool.ntp.org` and `time.nist.gov` are always passed as fallbacks.  Configurable via the Setup page → Network section.
+`ntpApply()` (`src/time/ntp_sync.cpp`) runs after WiFi connects and again from `/save_config` when the NTP settings change, so no reboot is needed.  With `ntpEnabled` it calls `configTime(0, 0, ...)` with the non-blank `ntpServer`/`2`/`3` in order (SNTP keeps the pointers, which point into the static `deviceConfig`); all blank falls back to `NTP_DEFAULT_SERVER` (time.google.com).  Disabled stops SNTP, so after a reboot the clock is never set and Sky History records nothing.  A sync callback records `ntpLastSyncMs()` for the Network tab's status row.
+
+The system clock always runs in UTC.  `utcOffsetMin` only shifts Web UI displays: `/api/status` sends it as `total_offset` and `data-clock='local-*'` elements apply it (no DST).  When it is non-zero the status bar and Home show local time labelled e.g. `UTC+05:30`.  Setup → Network → Time.
 
 ### MQTT / Home Assistant Autodiscovery
 

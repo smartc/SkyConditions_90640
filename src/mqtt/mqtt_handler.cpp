@@ -415,3 +415,8 @@ void mqttLoop()
     publishStatusToMQTT();
   }
 }
+
+bool mqttIsConnected()
+{
+  return mqttClient.connected();
+}

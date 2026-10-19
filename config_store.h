@@ -33,7 +33,11 @@ struct DeviceConfig {
   char     location[32];         // Location string in Alpaca management API
 
   // Network
-  char     ntpServer[64];        // Preferred NTP server (blank = use defaults only)
+  bool     ntpEnabled;           // false = no SNTP sync
+  char     ntpServer[64];        // NTP sources, tried in order; blanks skipped,
+  char     ntpServer2[64];       //   all blank = NTP_DEFAULT_SERVER (time.google.com)
+  char     ntpServer3[64];
+  int16_t  utcOffsetMin;         // Web UI display offset from UTC, minutes (-720 ... 840); clock stays UTC
 
   // MQTT / Home Assistant
   bool     mqttEnabled;

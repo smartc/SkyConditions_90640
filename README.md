@@ -35,7 +35,7 @@ ESP32-S3 ASCOM Alpaca **ObservingConditions** device using an MLX90640 32×24 in
   - Setup page: full calibration, sensor enable/type selection, MQTT, NTP, network settings, WiFi scan & reconnect
   - Debug console (`/console`): live serial log with deduplication and copy button
 - **Raw thermal matrix endpoint** — `GET /thermalmatrix` returns the full 32×24 temperature array as JSON
-- **OTA firmware updates** via ElegantOTA at `/update`
+- **OTA firmware updates** via ElegantOTA, on the **Update** page (`/firmware`)
 - **WiFi management** — scan for networks and reconnect without a full credential reset (Setup page → WiFi)
 - **History ring buffers**: 30-second buckets (60 min hi-res) + 15-minute buckets (24 h lo-res)
 - **Persistent sky history**: hourly rain wet-time, night SQM avg/peak, and day/night clear-sky-hours logs covering 90 days, survives reboot, backing the Sky History calendar
@@ -232,12 +232,14 @@ UDP discovery (port 32227) runs in a dedicated FreeRTOS task pinned to Core 0 so
 | `http://<ip>/trends` | 60-min and 24-h trend charts |
 | `http://<ip>/skyhistory` | 90-day Sky History calendar (Rain / SQM / Clear Sky views) |
 | `http://<ip>/skyhistory.json?days=N` | Raw hourly rain/SQM/clear-sky JSON (N = 1–90) |
-| `http://<ip>/setup` | Configuration form |
+| `http://<ip>/setup` | Configuration, in tabs (Cloud Cover, Sky Quality, Imaging, Sensors, MQTT, Network, WiFi, Device) |
 | `http://<ip>/console` | Live serial debug console |
 | `http://<ip>/thermal.jpg` | Latest thermal JPEG snapshot |
 | `http://<ip>/thermalmatrix` | Raw 32×24 temperature matrix as JSON |
 | `http://<ip>/history.json?minutes=N` | Raw history JSON (N = 5–1440) |
-| `http://<ip>/update` | ElegantOTA firmware update |
+| `http://<ip>/firmware` | Firmware update (ElegantOTA's `/update`, framed in the site layout) |
+| `http://<ip>/update` | ElegantOTA firmware update (bare library page; scripts can still POST here) |
+| `http://<ip>/api/status` | Status-bar JSON polled by every page (sky, rain, ambient, WiFi, MQTT, errors, device clock) |
 | `http://<ip>/wifi/scan` | GET — JSON array of nearby WiFi networks |
 | `http://<ip>/wifi/connect` | POST (ssid, password) — reconnect without credential reset |
 | `http://<ip>/reset_wifi` | POST — clear WiFi credentials and restart |
@@ -334,7 +336,9 @@ Slopes default to 0 (fixed thresholds).  The dew-point term needs a humidity sen
 | TSL2591 Integration | 300 ms | Integration time for the brightness sensor |
 | Average Period | 0 h | ASCOM ObservingConditions AveragePeriod (hours); median window for reported cloud cover |
 | Location | Observatory | Shown in Alpaca management API |
-| NTP Server | *(blank)* | Preferred NTP server (blank = pool.ntp.org) |
+| NTP Sync | Enabled | Set the clock from NTP; re-syncs hourly |
+| NTP Server 1 / 2 / 3 | `time.google.com` / *(blank)* / *(blank)* | Sources tried in order; all blank = time.google.com |
+| UTC Offset | 0 h | Shifts times shown in the Web UI only; the clock, Alpaca, MQTT and Sky History stay UTC |
 | MQTT Enabled | false | Enable MQTT publishing |
 | MQTT Server | *(blank)* | Broker hostname or IP |
 | MQTT Port | 1883 | Broker port |
